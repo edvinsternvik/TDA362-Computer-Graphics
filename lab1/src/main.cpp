@@ -448,10 +448,6 @@ int main() {
         return swapchain;
     };
 
-    /* VkSwapchainKHR swapchain = create_swapchain( */
-    /*     vk_device, surface, surface_info, graphics_family, present_family */
-    /* ); */
-
     // Retrieve the swap chain images
     auto create_swapchain_image_views = [](VkDevice device, VkSwapchainKHR swapchain, VkFormat image_format) {
         uint32_t swapchain_image_count;
@@ -480,10 +476,6 @@ int main() {
 
         return swapchain_image_views;
     };
-    /* std::vector<VkImageView> swapchain_image_views = */
-    /*     create_swapchain_image_views( */
-    /*         vk_device, swapchain, surface_info.format.format */
-    /*     ); */
 
     // Create framebuffers
     auto create_framebuffer = [](
@@ -509,13 +501,6 @@ int main() {
 
         return framebuffer;
     };
-
-    /* std::vector<VkFramebuffer> framebuffers(swapchain_image_views.size()); */
-    /* for(size_t i = 0; i < swapchain_image_views.size(); ++i) { */
-    /*     framebuffers[i] = create_framebuffer( */
-    /*         vk_device, render_pass, swapchain_image_views[i], surface_info.capabilities.currentExtent */
-    /*     ); */
-    /* } */
 
     // Recreate swapchain
     auto recreate_swapchain = [create_swapchain, create_swapchain_image_views, create_framebuffer](
