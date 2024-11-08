@@ -14,6 +14,7 @@ const int SCREEN_HEIGHT = 480;
 const std::array<const char*, 1> DEVICE_EXTENSIONS = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
+const uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
 #ifdef NDEBUG
 const std::array<const char*, 0> VALIDATION_LAYERS = { };
@@ -22,6 +23,8 @@ const std::array<const char*, 1> VALIDATION_LAYERS = {
     "VK_LAYER_KHRONOS_validation"
 };
 #endif
+
+#define VK_HANDLE_ERROR(X, msg) if(X != VK_SUCCESS) { throw std::runtime_error(msg); }
 
 int main() {
     // Init
@@ -74,7 +77,10 @@ int main() {
     inst_create_info.ppEnabledLayerNames = VALIDATION_LAYERS.data();
 
     VkInstance vk_instance;
-    vkCreateInstance(&inst_create_info, nullptr, &vk_instance);
+    VK_HANDLE_ERROR(
+        vkCreateInstance(&inst_create_info, nullptr, &vk_instance),
+        "Could not create instance"
+    );
 
     // Create surface
     VkSurfaceKHR surface;
@@ -163,7 +169,10 @@ int main() {
     device_create_info.pEnabledFeatures = &device_features;
 
     VkDevice vk_device;
-    vkCreateDevice(physical_device, &device_create_info, nullptr, &vk_device);
+    VK_HANDLE_ERROR(
+        vkCreateDevice(physical_device, &device_create_info, nullptr, &vk_device),
+        "Could not create device"
+    );
 
     // Get queues
     VkQueue graphics_queue;
@@ -222,7 +231,10 @@ int main() {
     }
 
     VkSwapchainKHR swapchain;
-    vkCreateSwapchainKHR(vk_device, &swapchain_create_info, nullptr, &swapchain);
+    VK_HANDLE_ERROR(
+        vkCreateSwapchainKHR(vk_device, &swapchain_create_info, nullptr, &swapchain),
+        "Could not create swapchain"
+    );
 
     // Retrieve the swap chain images
     uint32_t swapchain_image_count;
@@ -243,7 +255,10 @@ int main() {
         view_create_info.subresourceRange.baseArrayLayer = 0;
         view_create_info.subresourceRange.layerCount = 1;
 
-        vkCreateImageView(vk_device, &view_create_info, nullptr, &swapchain_image_views[i]);
+        VK_HANDLE_ERROR(
+            vkCreateImageView(vk_device, &view_create_info, nullptr, &swapchain_image_views[i]),
+            "Could not create image view"
+        );
     }
 
     // Create render pass
@@ -284,7 +299,10 @@ int main() {
     render_pass_create_info.pDependencies = &dependency;
 
     VkRenderPass render_pass;
-    vkCreateRenderPass(vk_device, &render_pass_create_info, nullptr, &render_pass);
+    VK_HANDLE_ERROR(
+        vkCreateRenderPass(vk_device, &render_pass_create_info, nullptr, &render_pass),
+        "Could not create render pass"
+    );
 
     // Create shader
     auto read_file = [](const char* file_name) {
@@ -303,7 +321,10 @@ int main() {
         shader_module_create_info.pCode = reinterpret_cast<const uint32_t*>(shader_src.data());
 
         VkShaderModule shader_module;
-        vkCreateShaderModule(vk_device, &shader_module_create_info, nullptr, &shader_module);
+        VK_HANDLE_ERROR(
+            vkCreateShaderModule(vk_device, &shader_module_create_info, nullptr, &shader_module),
+            "Could not create shader module"
+        );
         return shader_module;
     };
 
@@ -404,7 +425,10 @@ int main() {
     pipeline_layout_create_info.pushConstantRangeCount = 0;
 
     VkPipelineLayout pipeline_layout;
-    vkCreatePipelineLayout(vk_device, &pipeline_layout_create_info, nullptr, &pipeline_layout);
+    VK_HANDLE_ERROR(
+        vkCreatePipelineLayout(vk_device, &pipeline_layout_create_info, nullptr, &pipeline_layout),
+        "Could not create pipeline layout"
+    );
 
     VkGraphicsPipelineCreateInfo pipeline_create_info = {};
     pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -423,7 +447,10 @@ int main() {
     pipeline_create_info.subpass = 0;
 
     VkPipeline graphics_pipeline;
-    vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &graphics_pipeline);
+    VK_HANDLE_ERROR(
+        vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &graphics_pipeline),
+        "Could not create graphics pipeline"
+    );
 
     vkDestroyShaderModule(vk_device, vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, frag_shader_module, nullptr);
@@ -440,7 +467,10 @@ int main() {
         framebuffer_create_info.height = swap_extent.height;
         framebuffer_create_info.layers = 1;
 
-        vkCreateFramebuffer(vk_device, &framebuffer_create_info, nullptr, &framebuffers[i]);
+        VK_HANDLE_ERROR(
+            vkCreateFramebuffer(vk_device, &framebuffer_create_info, nullptr, &framebuffers[i]),
+            "Could not create framebuffer"
+        );
     }
 
     // Create command pool
@@ -450,24 +480,33 @@ int main() {
     command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     VkCommandPool command_pool;
-    vkCreateCommandPool(vk_device, &command_pool_create_info, nullptr, &command_pool);
+    VK_HANDLE_ERROR(
+        vkCreateCommandPool(vk_device, &command_pool_create_info, nullptr, &command_pool),
+        "Could not create command pool"
+    );
 
     // Allocate command buffer
+    std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> command_buffers;
     VkCommandBufferAllocateInfo command_buffer_allocate_info = {};
     command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     command_buffer_allocate_info.commandPool = command_pool;
     command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    command_buffer_allocate_info.commandBufferCount = 1;
+    command_buffer_allocate_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 
-    VkCommandBuffer command_buffer;
-    vkAllocateCommandBuffers(vk_device, &command_buffer_allocate_info, &command_buffer);
+    VK_HANDLE_ERROR(
+        vkAllocateCommandBuffers(vk_device, &command_buffer_allocate_info, command_buffers.data()),
+        "Could not allocate command buffer"
+    );
 
     // Record command buffer
-    auto record_cmd_buffer = [&](uint32_t image_index) {
+    auto record_cmd_buffer = [&](VkCommandBuffer command_buffer, uint32_t image_index) {
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-        vkBeginCommandBuffer(command_buffer, &begin_info);
+        VK_HANDLE_ERROR(
+            vkBeginCommandBuffer(command_buffer, &begin_info),
+            "Could not begin command buffer"
+        );
 
         VkClearValue clear_color = { 0.0f, 0.0f, 0.0f, 1.0f };
         VkRenderPassBeginInfo render_pass_begin_info = {};
@@ -492,24 +531,40 @@ int main() {
         vkCmdDraw(command_buffer, 3, 1, 0, 0);
 
         vkCmdEndRenderPass(command_buffer);
-        vkEndCommandBuffer(command_buffer);
+        VK_HANDLE_ERROR(
+            vkEndCommandBuffer(command_buffer),
+            "Could not end command buffer"
+        );
     };
 
     // Create synchronization primitives
-    VkSemaphoreCreateInfo semaphore_create_info = {};
-    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> image_avaiable;
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> render_finished;
+    std::array<VkFence, MAX_FRAMES_IN_FLIGHT> frame_in_flight;
+    for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkSemaphoreCreateInfo semaphore_create_info = {};
+        semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-    VkSemaphore image_avaiable;
-    VkSemaphore render_finished;
-    vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &image_avaiable);
-    vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &render_finished);
+        VK_HANDLE_ERROR(
+            vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &image_avaiable[i]),
+            "Could not create semaphore"
+        );
+        VK_HANDLE_ERROR(
+            vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &render_finished[i]),
+            "Could not create semaphore"
+        );
 
-    VkFenceCreateInfo fence_create_info = {};
-    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        VkFenceCreateInfo fence_create_info = {};
+        fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    VkFence frame_in_flight;
-    vkCreateFence(vk_device, &fence_create_info, nullptr, &frame_in_flight);
+        VK_HANDLE_ERROR(
+            vkCreateFence(vk_device, &fence_create_info, nullptr, &frame_in_flight[i]),
+            "Could not create fence"
+        );
+    }
+
+    uint32_t current_frame = 0;
 
     // Run application
     SDL_Event e; bool quit = false;
@@ -519,44 +574,52 @@ int main() {
         }
 
         // Render frame
-        vkWaitForFences(vk_device, 1, &frame_in_flight, VK_TRUE, UINT64_MAX);
-        vkResetFences(vk_device, 1, &frame_in_flight);
+        vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
+        vkResetFences(vk_device, 1, &frame_in_flight[current_frame]);
 
         uint32_t image_index;
-        vkAcquireNextImageKHR(vk_device, swapchain, UINT64_MAX, image_avaiable, VK_NULL_HANDLE, &image_index);
-        vkResetCommandBuffer(command_buffer, 0);
-        record_cmd_buffer(image_index);
+        vkAcquireNextImageKHR(vk_device, swapchain, UINT64_MAX, image_avaiable[current_frame], VK_NULL_HANDLE, &image_index);
+        vkResetCommandBuffer(command_buffers[current_frame], 0);
+        record_cmd_buffer(command_buffers[current_frame], image_index);
 
         VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSubmitInfo submit_info = {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.waitSemaphoreCount = 1;
-        submit_info.pWaitSemaphores = &image_avaiable;
+        submit_info.pWaitSemaphores = &image_avaiable[current_frame];
         submit_info.pWaitDstStageMask = wait_stages;
         submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer;
+        submit_info.pCommandBuffers = &command_buffers[current_frame];
         submit_info.signalSemaphoreCount = 1;
-        submit_info.pSignalSemaphores = &render_finished;
+        submit_info.pSignalSemaphores = &render_finished[current_frame];
 
-        vkQueueSubmit(graphics_queue, 1, &submit_info, frame_in_flight);
+        VK_HANDLE_ERROR(
+            vkQueueSubmit(graphics_queue, 1, &submit_info, frame_in_flight[current_frame]),
+            "Could not submit queue"
+        );
 
         VkPresentInfoKHR present_info = {};
         present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present_info.waitSemaphoreCount = 1;
-        present_info.pWaitSemaphores = &render_finished;
+        present_info.pWaitSemaphores = &render_finished[current_frame];
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain;
         present_info.pImageIndices = &image_index;
 
-        vkQueuePresentKHR(present_queue, &present_info);
+        VK_HANDLE_ERROR(
+            vkQueuePresentKHR(present_queue, &present_info),
+            "Could not present queue"
+        );
+
+        current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
-    vkDestroyFence(vk_device, frame_in_flight, nullptr);
-    vkDestroySemaphore(vk_device, render_finished, nullptr);
-    vkDestroySemaphore(vk_device, image_avaiable, nullptr);
+    for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);
+    for(auto s : render_finished) vkDestroySemaphore(vk_device, s, nullptr);
+    for(auto s : image_avaiable) vkDestroySemaphore(vk_device, s, nullptr);
     vkDestroyCommandPool(vk_device, command_pool, nullptr);
     for(const auto framebuffer : framebuffers) {
         vkDestroyFramebuffer(vk_device, framebuffer, nullptr);
