@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_video.h>
 #include <SDL2/SDL_vulkan.h>
 #include <cstdint>
 #include <vulkan/vulkan.hpp>
@@ -36,7 +37,7 @@ int main() {
         "Vulkan test",
         SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         SCREEN_WIDTH, SCREEN_HEIGHT,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_VULKAN
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN
     );
 
     uint32_t layer_count;
@@ -195,75 +196,21 @@ int main() {
     std::vector<VkPresentModeKHR> present_modes(present_modes_count);
     vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_modes_count, present_modes.data());
 
+    struct SurfaceInfo {
+        VkSurfaceFormatKHR format;
+        VkPresentModeKHR present_mode;
+        VkSurfaceCapabilitiesKHR capabilities;
+    };
+
     // TODO - Select optimal format, present mode and swap extent
-    VkSurfaceFormatKHR surface_format = surface_formats[0];
-    VkPresentModeKHR present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    VkExtent2D swap_extent = surface_capabilities.currentExtent;
-
-    // Create swapchain
-    uint32_t swapchain_min_image_count = surface_capabilities.minImageCount + 1;
-    
-    VkSwapchainCreateInfoKHR swapchain_create_info = {};
-    swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    swapchain_create_info.surface = surface;
-    swapchain_create_info.minImageCount = swapchain_min_image_count;
-    swapchain_create_info.imageFormat = surface_format.format;
-    swapchain_create_info.imageColorSpace = surface_format.colorSpace;
-    swapchain_create_info.imageExtent = swap_extent;
-    swapchain_create_info.imageArrayLayers = 1;
-    swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    swapchain_create_info.preTransform = surface_capabilities.currentTransform;
-    swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    swapchain_create_info.presentMode = present_mode;
-    swapchain_create_info.clipped = VK_TRUE;
-    swapchain_create_info.oldSwapchain = VK_NULL_HANDLE;
-
-    std::array<uint32_t, 2> queue_family_indices = {graphics_family, present_family};
-    if(graphics_family == present_family) {
-        swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        swapchain_create_info.queueFamilyIndexCount = 0;
-        swapchain_create_info.pQueueFamilyIndices = nullptr;
-    }
-    else {
-        swapchain_create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-        swapchain_create_info.queueFamilyIndexCount = 2;
-        swapchain_create_info.pQueueFamilyIndices = queue_family_indices.data();
-    }
-
-    VkSwapchainKHR swapchain;
-    VK_HANDLE_ERROR(
-        vkCreateSwapchainKHR(vk_device, &swapchain_create_info, nullptr, &swapchain),
-        "Could not create swapchain"
-    );
-
-    // Retrieve the swap chain images
-    uint32_t swapchain_image_count;
-    vkGetSwapchainImagesKHR(vk_device, swapchain, &swapchain_image_count, nullptr);
-    std::vector<VkImage> swapchain_images(swapchain_image_count);
-    vkGetSwapchainImagesKHR(vk_device, swapchain, &swapchain_image_count, swapchain_images.data());
-
-    std::vector<VkImageView> swapchain_image_views(swapchain_image_count);
-    for(size_t i = 0; i < swapchain_image_count; ++i) {
-        VkImageViewCreateInfo view_create_info = {};
-        view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_create_info.image = swapchain_images[i];
-        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_create_info.format = surface_format.format;
-        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view_create_info.subresourceRange.baseMipLevel = 0;
-        view_create_info.subresourceRange.levelCount = 1;
-        view_create_info.subresourceRange.baseArrayLayer = 0;
-        view_create_info.subresourceRange.layerCount = 1;
-
-        VK_HANDLE_ERROR(
-            vkCreateImageView(vk_device, &view_create_info, nullptr, &swapchain_image_views[i]),
-            "Could not create image view"
-        );
-    }
+    SurfaceInfo surface_info = {};
+    surface_info.format = surface_formats[0];
+    surface_info.present_mode = VK_PRESENT_MODE_FIFO_KHR;
+    surface_info.capabilities = surface_capabilities;
 
     // Create render pass
     VkAttachmentDescription color_attachment = {};
-    color_attachment.format = surface_format.format;
+    color_attachment.format = surface_info.format.format;
     color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -373,8 +320,8 @@ int main() {
     VkViewport viewport = {};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = swap_extent.width;
-    viewport.height = swap_extent.height;
+    viewport.width = surface_info.capabilities.currentExtent.width;
+    viewport.height = surface_info.capabilities.currentExtent.height;
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
 
@@ -397,7 +344,6 @@ int main() {
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
 
     VkPipelineColorBlendAttachmentState color_blend_attachment = {};
     color_blend_attachment.colorWriteMask =
@@ -455,23 +401,160 @@ int main() {
     vkDestroyShaderModule(vk_device, vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, frag_shader_module, nullptr);
 
+
+    // Create swapchain
+    auto create_swapchain = [](
+        VkDevice device,
+        VkSurfaceKHR surface,
+        SurfaceInfo surface_info,
+        uint32_t graphics_family,
+        uint32_t present_family
+    ) {
+        uint32_t swapchain_min_image_count = surface_info.capabilities.minImageCount + 1;
+
+        VkSwapchainCreateInfoKHR swapchain_create_info = {};
+        swapchain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+        swapchain_create_info.surface = surface;
+        swapchain_create_info.minImageCount = swapchain_min_image_count;
+        swapchain_create_info.imageFormat = surface_info.format.format;
+        swapchain_create_info.imageColorSpace = surface_info.format.colorSpace;
+        swapchain_create_info.imageExtent = surface_info.capabilities.currentExtent;
+        swapchain_create_info.imageArrayLayers = 1;
+        swapchain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        swapchain_create_info.preTransform = surface_info.capabilities.currentTransform;
+        swapchain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        swapchain_create_info.presentMode = surface_info.present_mode;
+        swapchain_create_info.clipped = VK_TRUE;
+        swapchain_create_info.oldSwapchain = VK_NULL_HANDLE;
+
+        std::array<uint32_t, 2> queue_family_indices = { graphics_family, present_family };
+        if(graphics_family == present_family) {
+            swapchain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            swapchain_create_info.queueFamilyIndexCount = 0;
+            swapchain_create_info.pQueueFamilyIndices = nullptr;
+        }
+        else {
+            swapchain_create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+            swapchain_create_info.queueFamilyIndexCount = 2;
+            swapchain_create_info.pQueueFamilyIndices = queue_family_indices.data();
+        }
+
+        VkSwapchainKHR swapchain;
+        VK_HANDLE_ERROR(
+            vkCreateSwapchainKHR(device, &swapchain_create_info, nullptr, &swapchain),
+            "Could not create swapchain"
+        );
+
+        return swapchain;
+    };
+
+    /* VkSwapchainKHR swapchain = create_swapchain( */
+    /*     vk_device, surface, surface_info, graphics_family, present_family */
+    /* ); */
+
+    // Retrieve the swap chain images
+    auto create_swapchain_image_views = [](VkDevice device, VkSwapchainKHR swapchain, VkFormat image_format) {
+        uint32_t swapchain_image_count;
+        vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, nullptr);
+        std::vector<VkImage> swapchain_images(swapchain_image_count);
+        vkGetSwapchainImagesKHR(device, swapchain, &swapchain_image_count, swapchain_images.data());
+
+        std::vector<VkImageView> swapchain_image_views(swapchain_image_count);
+        for(size_t i = 0; i < swapchain_image_count; ++i) {
+            VkImageViewCreateInfo view_create_info = {};
+            view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            view_create_info.image = swapchain_images[i];
+            view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            view_create_info.format = image_format;
+            view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            view_create_info.subresourceRange.baseMipLevel = 0;
+            view_create_info.subresourceRange.levelCount = 1;
+            view_create_info.subresourceRange.baseArrayLayer = 0;
+            view_create_info.subresourceRange.layerCount = 1;
+
+            VK_HANDLE_ERROR(
+                vkCreateImageView(device, &view_create_info, nullptr, &swapchain_image_views[i]),
+                "Could not create image view"
+            );
+        }
+
+        return swapchain_image_views;
+    };
+    /* std::vector<VkImageView> swapchain_image_views = */
+    /*     create_swapchain_image_views( */
+    /*         vk_device, swapchain, surface_info.format.format */
+    /*     ); */
+
     // Create framebuffers
-    std::vector<VkFramebuffer> framebuffers(swapchain_image_views.size());
-    for(size_t i = 0; i < swapchain_image_views.size(); ++i) {
+    auto create_framebuffer = [](
+        VkDevice device,
+        VkRenderPass render_pass,
+        VkImageView image_view,
+        VkExtent2D extent
+    ) {
         VkFramebufferCreateInfo framebuffer_create_info = {};
         framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebuffer_create_info.renderPass = render_pass;
         framebuffer_create_info.attachmentCount = 1;
-        framebuffer_create_info.pAttachments = &swapchain_image_views[i];
-        framebuffer_create_info.width = swap_extent.width;
-        framebuffer_create_info.height = swap_extent.height;
+        framebuffer_create_info.pAttachments = &image_view;
+        framebuffer_create_info.width = extent.width;
+        framebuffer_create_info.height = extent.height;
         framebuffer_create_info.layers = 1;
 
+        VkFramebuffer framebuffer;
         VK_HANDLE_ERROR(
-            vkCreateFramebuffer(vk_device, &framebuffer_create_info, nullptr, &framebuffers[i]),
+            vkCreateFramebuffer(device, &framebuffer_create_info, nullptr, &framebuffer),
             "Could not create framebuffer"
         );
-    }
+
+        return framebuffer;
+    };
+
+    /* std::vector<VkFramebuffer> framebuffers(swapchain_image_views.size()); */
+    /* for(size_t i = 0; i < swapchain_image_views.size(); ++i) { */
+    /*     framebuffers[i] = create_framebuffer( */
+    /*         vk_device, render_pass, swapchain_image_views[i], surface_info.capabilities.currentExtent */
+    /*     ); */
+    /* } */
+
+    // Recreate swapchain
+    auto recreate_swapchain = [create_swapchain, create_swapchain_image_views, create_framebuffer](
+        VkDevice device,
+        VkSwapchainKHR* swapchain,
+        std::vector<VkImageView>* image_views,
+        std::vector<VkFramebuffer>* framebuffers,
+        VkSurfaceKHR surface,
+        SurfaceInfo surface_info,
+        uint32_t graphics_family,
+        uint32_t present_family,
+        VkRenderPass render_pass
+    ) {
+        if(*swapchain != VK_NULL_HANDLE) {
+            for(const auto fb : *framebuffers) vkDestroyFramebuffer(device, fb, nullptr);
+            for(const auto iv : *image_views) vkDestroyImageView(device, iv, nullptr);
+            vkDestroySwapchainKHR(device, *swapchain, nullptr);
+        }
+
+        *swapchain = create_swapchain(device, surface, surface_info, graphics_family, present_family);
+        *image_views = create_swapchain_image_views(device, *swapchain, surface_info.format.format);
+        *framebuffers = std::vector<VkFramebuffer>(image_views->size());
+        for(size_t i = 0; i < image_views->size(); ++i) {
+            (*framebuffers)[i] = create_framebuffer(
+                device, render_pass, (*image_views)[i], surface_info.capabilities.currentExtent
+            );
+        }
+    };
+
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    std::vector<VkImageView> swapchain_image_views;
+    std::vector<VkFramebuffer> framebuffers;
+    recreate_swapchain(
+        vk_device,
+        &swapchain, &swapchain_image_views, &framebuffers,
+        surface, surface_info,
+        graphics_family, present_family,
+        render_pass
+    );
 
     // Create command pool
     VkCommandPoolCreateInfo command_pool_create_info = {};
@@ -514,7 +597,7 @@ int main() {
         render_pass_begin_info.renderPass = render_pass;
         render_pass_begin_info.framebuffer = framebuffers[image_index];
         render_pass_begin_info.renderArea.offset = {0, 0};
-        render_pass_begin_info.renderArea.extent = swap_extent;
+        render_pass_begin_info.renderArea.extent = surface_info.capabilities.currentExtent;
         render_pass_begin_info.clearValueCount = 1;
         render_pass_begin_info.pClearValues = &clear_color;
 
@@ -524,7 +607,7 @@ int main() {
 
         VkRect2D scissor = {};
         scissor.offset = { 0, 0 };
-        scissor.extent = swap_extent;
+        scissor.extent = surface_info.capabilities.currentExtent;
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
@@ -565,20 +648,35 @@ int main() {
     }
 
     uint32_t current_frame = 0;
+    bool framebuffer_resized = false;
 
     // Run application
     SDL_Event e; bool quit = false;
     while(quit == false) {
         while(SDL_PollEvent(&e)) {
             if(e.type == SDL_QUIT) quit = true;
+            /* if(e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) framebuffer_resized = true; */
         }
 
         // Render frame
         vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
-        vkResetFences(vk_device, 1, &frame_in_flight[current_frame]);
 
         uint32_t image_index;
-        vkAcquireNextImageKHR(vk_device, swapchain, UINT64_MAX, image_avaiable[current_frame], VK_NULL_HANDLE, &image_index);
+        VkResult r = vkAcquireNextImageKHR(vk_device, swapchain, UINT64_MAX, image_avaiable[current_frame], VK_NULL_HANDLE, &image_index);
+        if(r == VK_ERROR_OUT_OF_DATE_KHR) {
+            vkDeviceWaitIdle(vk_device);
+            recreate_swapchain(
+                vk_device,
+                &swapchain, &swapchain_image_views, &framebuffers,
+                surface, surface_info,
+                graphics_family, present_family,
+                render_pass
+            );
+            continue;
+        }
+
+        vkResetFences(vk_device, 1, &frame_in_flight[current_frame]);
+
         vkResetCommandBuffer(command_buffers[current_frame], 0);
         record_cmd_buffer(command_buffers[current_frame], image_index);
 
@@ -606,10 +704,19 @@ int main() {
         present_info.pSwapchains = &swapchain;
         present_info.pImageIndices = &image_index;
 
-        VK_HANDLE_ERROR(
-            vkQueuePresentKHR(present_queue, &present_info),
-            "Could not present queue"
-        );
+        r = vkQueuePresentKHR(present_queue, &present_info);
+        if(r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR || framebuffer_resized) {
+            framebuffer_resized = false;
+            vkDeviceWaitIdle(vk_device);
+            recreate_swapchain(
+                vk_device,
+                &swapchain, &swapchain_image_views, &framebuffers,
+                surface, surface_info,
+                graphics_family, present_family,
+                render_pass
+            );
+            continue;
+        }
 
         current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
