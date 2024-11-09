@@ -434,6 +434,20 @@ int main() {
     attribute_descriptions[1].offset = 3 * sizeof(float);
     attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
 
+    // Specify descriptors
+    VkDescriptorSetLayoutBinding ubo_layout_binding = {};
+    ubo_layout_binding.binding = 0;
+    ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ubo_layout_binding.descriptorCount = 1;
+    ubo_layout_binding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayout ubo_layout;
+    VkDescriptorSetLayoutCreateInfo ubo_layout_create_info = {};
+    ubo_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    ubo_layout_create_info.bindingCount = 1;
+    ubo_layout_create_info.pBindings = &ubo_layout_binding;
+    vkCreateDescriptorSetLayout(vk_device, &ubo_layout_create_info, nullptr, &ubo_layout);
 
     // Pipeline
     std::vector<VkDynamicState> dynamic_states = {
@@ -500,7 +514,8 @@ int main() {
 
     VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
     pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_create_info.setLayoutCount = 0;
+    pipeline_layout_create_info.setLayoutCount = 1;
+    pipeline_layout_create_info.pSetLayouts = &ubo_layout;
     pipeline_layout_create_info.pushConstantRangeCount = 0;
 
     VkPipelineLayout pipeline_layout;
@@ -746,6 +761,71 @@ int main() {
         index_buffer, (void*)indices, sizeof(indices)
     );
 
+    // Create uniform buffers
+    struct Vec3 {
+        float x, y, z;
+    };
+    Vec3 uniform_data = {0.0, 0.0, 0.0};
+
+    std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> uniform_buffers;
+    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> uniform_memory;
+    std::array<void*, MAX_FRAMES_IN_FLIGHT> uniform_buffer_mapping;
+
+    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        uniform_buffers[i] = create_buffer(
+            vk_device,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            sizeof(Vec3)
+        );
+
+        uniform_memory[i] = allocate_memory(
+            vk_device, physical_device,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            uniform_buffers[i]
+        );
+
+        vkMapMemory(vk_device, uniform_memory[i], 0, sizeof(Vec3), 0, &uniform_buffer_mapping[i]);
+    }
+
+    // Create descriptor pool
+    VkDescriptorPool descriptor_pool;
+    VkDescriptorPoolSize descriptor_pool_size = {};
+    descriptor_pool_size.descriptorCount = MAX_FRAMES_IN_FLIGHT;
+    descriptor_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
+    descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptor_pool_create_info.maxSets = MAX_FRAMES_IN_FLIGHT;
+    descriptor_pool_create_info.poolSizeCount = 1;
+    descriptor_pool_create_info.pPoolSizes = &descriptor_pool_size;
+    vkCreateDescriptorPool(vk_device, &descriptor_pool_create_info, nullptr, &descriptor_pool);
+
+    // Create descriptor sets
+    std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> descriptor_sets;
+    std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT> descriptor_set_layouts;
+    descriptor_set_layouts.fill(ubo_layout);
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
+    descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptor_set_allocate_info.descriptorPool = descriptor_pool;
+    descriptor_set_allocate_info.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+    descriptor_set_allocate_info.pSetLayouts = descriptor_set_layouts.data();
+    vkAllocateDescriptorSets(vk_device, &descriptor_set_allocate_info, descriptor_sets.data());
+
+    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkDescriptorBufferInfo descriptor_buffer_info = {};
+        descriptor_buffer_info.buffer = uniform_buffers[i];
+        descriptor_buffer_info.range = sizeof(Vec3);
+        descriptor_buffer_info.offset = 0;
+        VkWriteDescriptorSet write_descriptor_set = {};
+        write_descriptor_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write_descriptor_set.descriptorCount = 1;
+        write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        write_descriptor_set.dstSet = descriptor_sets[i];
+        write_descriptor_set.dstBinding = 0;
+        write_descriptor_set.dstArrayElement = 0;
+        write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
+        vkUpdateDescriptorSets(vk_device, 1, &write_descriptor_set, 0, nullptr);
+    }
+
     // Allocate command buffer
     std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> command_buffers;
     VkCommandBufferAllocateInfo command_buffer_allocate_info = {};
@@ -760,7 +840,7 @@ int main() {
     );
 
     // Record command buffer
-    auto record_cmd_buffer = [&](VkCommandBuffer command_buffer, uint32_t image_index) {
+    auto record_cmd_buffer = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -800,6 +880,15 @@ int main() {
         scissor.offset = { 0, 0 };
         scissor.extent = surface_info.capabilities.currentExtent;
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+        vkCmdBindDescriptorSets(
+            command_buffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipeline_layout,
+            0, 1,
+            &descriptor_sets[current_frame],
+            0, nullptr
+        );
 
         vkCmdDrawIndexed(command_buffer, 9, 1, 0, 0, 0);
 
@@ -871,7 +960,10 @@ int main() {
         vkResetFences(vk_device, 1, &frame_in_flight[current_frame]);
 
         vkResetCommandBuffer(command_buffers[current_frame], 0);
-        record_cmd_buffer(command_buffers[current_frame], image_index);
+        record_cmd_buffer(command_buffers[current_frame], image_index, current_frame);
+
+        memcpy(uniform_buffer_mapping[current_frame], &uniform_data, sizeof(Vec3));
+        uniform_data.x += 0.001;
 
         VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSubmitInfo submit_info = {};
@@ -918,6 +1010,10 @@ int main() {
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
+    for(auto b : uniform_buffers) vkDestroyBuffer(vk_device, b, nullptr);
+    for(auto m : uniform_memory) vkFreeMemory(vk_device, m, nullptr);
+    vkDestroyDescriptorPool(vk_device, descriptor_pool, nullptr);
+    vkDestroyDescriptorSetLayout(vk_device, ubo_layout, nullptr);
     vkDestroyBuffer(vk_device, index_buffer, nullptr);
     vkFreeMemory(vk_device, index_buffer_memory, nullptr);
     vkDestroyBuffer(vk_device, vertex_buffer, nullptr);
