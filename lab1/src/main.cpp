@@ -690,10 +690,18 @@ int main() {
 
     // Create vertex buffer
     const float vertices[] = {
-    //    X      Y     Z     R     G     B
-         0.0f,  0.5f, 1.0f, 1.0f, 0.0f, 0.0f,
-        -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 0.0f,
-         0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f
+    //    X      Y      Z     R     G     B
+         0.0f,  0.5f,  1.0f, 1.0f, 0.0f, 0.0f,
+        -0.5f, -0.5f,  1.0f, 0.0f, 1.0f, 0.0f,
+         0.5f, -0.5f,  1.0f, 0.0f, 0.0f, 1.0f,
+
+         0.0f,  0.6f,  1.0f, 0.0f, 1.0f, 0.0f,
+         0.5f,  0.9f,  1.0f, 0.0f, 0.0f, 0.2f,
+        -0.5f,  0.8f,  1.0f, 0.0f, 0.0f, 0.2f,
+
+         0.5f, -0.45f, 1.0f, 0.0f, 1.0f, 1.0f,
+         0.5f,  0.8f,  1.0f, 1.0f, 1.0f, 0.0f,
+         0.0f,  0.55f, 1.0f, 1.0f, 0.0f, 0.0f
     };
 
     VkBuffer vertex_buffer = create_buffer(
@@ -709,13 +717,35 @@ int main() {
     );
 
     write_buffer_staged(
-        vk_device,
-        physical_device,
+        vk_device, physical_device,
         graphics_queue,
         command_pool,
         vertex_buffer,
-        (void*)vertices,
-        sizeof(vertices)
+        (void*)vertices, sizeof(vertices)
+    );
+
+    // Create index buffer
+    const uint32_t indices[] = {
+        0, 1, 2, 3, 4, 5, 6, 7, 8
+    };
+
+    VkBuffer index_buffer = create_buffer(
+        vk_device,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        sizeof(indices)
+    );
+
+    VkDeviceMemory index_buffer_memory = allocate_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        index_buffer
+    );
+
+    write_buffer_staged(
+        vk_device, physical_device,
+        graphics_queue,
+        command_pool,
+        index_buffer, (void*)indices, sizeof(indices)
     );
 
     // Allocate command buffer
@@ -757,6 +787,7 @@ int main() {
 
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets);
+        vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
 
         VkRect2D scissor = {};
         scissor.offset = { 0, 0 };
@@ -764,7 +795,7 @@ int main() {
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-        vkCmdDraw(command_buffer, 3, 1, 0, 0);
+        vkCmdDrawIndexed(command_buffer, 9, 1, 0, 0, 0);
 
         vkCmdEndRenderPass(command_buffer);
         VK_HANDLE_ERROR(
@@ -879,6 +910,8 @@ int main() {
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
+    vkDestroyBuffer(vk_device, index_buffer, nullptr);
+    vkFreeMemory(vk_device, index_buffer_memory, nullptr);
     vkDestroyBuffer(vk_device, vertex_buffer, nullptr);
     vkFreeMemory(vk_device, vertex_buffer_memory, nullptr);
     for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);
