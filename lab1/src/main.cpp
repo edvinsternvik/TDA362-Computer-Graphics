@@ -296,13 +296,122 @@ int main() {
         vert_shader_stage_create_info, frag_shader_stage_create_info
     };
 
-    // Create vertex buffers
-    const float vertices[] = {
-    //    X      Y     Z     R     G     B
-         0.0f,  0.5f, 1.0f, 1.0f, 0.0f, 0.0f,
-        -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 0.0f,
-         0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f
+    // Buffers
+    auto create_buffer = [](
+        VkDevice device,
+        VkBufferUsageFlags usage,
+        size_t buffer_size
+    ) {
+        VkBufferCreateInfo buffer_create_info = {};
+        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_create_info.size = buffer_size;
+        buffer_create_info.usage = usage;
+        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        VkBuffer buffer;
+        VK_HANDLE_ERROR(
+            vkCreateBuffer(device, &buffer_create_info, nullptr, &buffer),
+            "Could not create vertex buffer"
+        );
+
+        return buffer;
     };
+
+    auto allocate_memory = [](
+        VkDevice device, VkPhysicalDevice physical_device,
+        VkMemoryPropertyFlags properties,
+        VkBuffer buffer
+    ) {
+        VkMemoryRequirements mem_requirements;
+        vkGetBufferMemoryRequirements(device, buffer, &mem_requirements);
+
+        VkPhysicalDeviceMemoryProperties mem_properties;
+        vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_properties);
+
+        uint32_t mem_type = -1;
+        for(uint32_t i = 0; i < mem_properties.memoryTypeCount; ++i) {
+            if(
+                (mem_requirements.memoryTypeBits & (1 << i)) &&
+                (mem_properties.memoryTypes[i].propertyFlags & properties) == properties
+            ) {
+                mem_type = i;
+                break;
+            }
+        }
+        if(mem_type == -1) throw std::runtime_error("Could not find suitable memory type");
+
+        VkMemoryAllocateInfo alloc_info = {};
+        alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        alloc_info.allocationSize = mem_requirements.size;
+        alloc_info.memoryTypeIndex = mem_type;
+
+        VkDeviceMemory buffer_memory;
+        VK_HANDLE_ERROR(
+            vkAllocateMemory(device, &alloc_info, nullptr, &buffer_memory),
+            "Could not allocate buffer memory"
+        );
+        vkBindBufferMemory(device, buffer, buffer_memory, 0);
+
+        return buffer_memory;
+    };
+
+    auto write_buffer_staged = [create_buffer, allocate_memory](
+        VkDevice device, VkPhysicalDevice physical_device, VkQueue cmd_queue,
+        VkCommandPool command_pool,
+        /* VkDeviceMemory buffer_memory, */
+        VkBuffer buffer,
+        void* data, size_t data_size
+    ) {
+        VkBuffer staging_buffer = create_buffer(
+            device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, data_size
+        );
+
+        VkDeviceMemory staging_buffer_memory = allocate_memory(
+            device, physical_device,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            staging_buffer
+        );
+
+        void* buffer_data;
+        vkMapMemory(device, staging_buffer_memory, 0, data_size, 0, &buffer_data);
+        memcpy(buffer_data, data, data_size);
+        vkUnmapMemory(device, staging_buffer_memory);
+
+        VkCommandBuffer cmd_buffer;
+        VkCommandBufferAllocateInfo cmd_buffer_allocate_info = {};
+        cmd_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmd_buffer_allocate_info.commandPool = command_pool;
+        cmd_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmd_buffer_allocate_info.commandBufferCount = 1;
+        vkAllocateCommandBuffers(device, &cmd_buffer_allocate_info, &cmd_buffer);
+
+        VkCommandBufferBeginInfo cmd_begin_info = {};
+        cmd_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        cmd_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmd_buffer, &cmd_begin_info);
+
+        VkBufferCopy buffer_cpy = {};
+        buffer_cpy.srcOffset = 0;
+        buffer_cpy.dstOffset = 0;
+        buffer_cpy.size = data_size;
+        vkCmdCopyBuffer(cmd_buffer, staging_buffer, buffer, 1, &buffer_cpy);
+
+        vkEndCommandBuffer(cmd_buffer);
+
+        VkSubmitInfo submit_info = {};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &cmd_buffer;
+        vkQueueSubmit(cmd_queue, 1, &submit_info, VK_NULL_HANDLE);
+
+        vkDeviceWaitIdle(device);
+
+        vkFreeCommandBuffers(device, command_pool, 1, &cmd_buffer);
+        vkDestroyBuffer(device, staging_buffer, nullptr);
+        vkFreeMemory(device, staging_buffer_memory, nullptr);
+    };
+
+    // Specify vertex data description
 
     VkVertexInputBindingDescription binding_description = {};
     binding_description.binding = 0;
@@ -319,57 +428,6 @@ int main() {
     attribute_descriptions[1].offset = 3 * sizeof(float);
     attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
 
-    VkBufferCreateInfo buffer_create_info = {};
-    buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    buffer_create_info.size = sizeof(vertices);
-    buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    VkBuffer vertex_buffer;
-    VK_HANDLE_ERROR(
-        vkCreateBuffer(vk_device, &buffer_create_info, nullptr, &vertex_buffer),
-        "Could not create vertex buffer"
-    );
-
-    // Memory
-    VkMemoryRequirements mem_requirements;
-    vkGetBufferMemoryRequirements(vk_device, vertex_buffer, &mem_requirements);
-
-    VkPhysicalDeviceMemoryProperties mem_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_properties);
-
-    uint32_t mem_type = -1;
-    for(uint32_t i = 0; i < mem_properties.memoryTypeCount; ++i) {
-        VkMemoryPropertyFlags properties =
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
-            | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-        if(
-            (mem_requirements.memoryTypeBits & (1 << i)) &&
-            (mem_properties.memoryTypes[i].propertyFlags & properties) == properties
-        ) {
-            mem_type = i;
-            break;
-        }
-    }
-    if(mem_type == -1) throw std::runtime_error("Could not find suitable memory type");
-
-    VkMemoryAllocateInfo alloc_info = {};
-    alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    alloc_info.allocationSize = mem_requirements.size;
-    alloc_info.memoryTypeIndex = mem_type;
-
-    VkDeviceMemory vertex_buffer_memory;
-    VK_HANDLE_ERROR(
-        vkAllocateMemory(vk_device, &alloc_info, nullptr, &vertex_buffer_memory),
-        "Could not allocate vertex buffer memory"
-    );
-    vkBindBufferMemory(vk_device, vertex_buffer, vertex_buffer_memory, 0);
-
-    void* buffer_data;
-    vkMapMemory(vk_device, vertex_buffer_memory, 0, buffer_create_info.size, 0, &buffer_data);
-    memcpy(buffer_data, vertices, buffer_create_info.size);
-    vkUnmapMemory(vk_device, vertex_buffer_memory);
 
     // Pipeline
     std::vector<VkDynamicState> dynamic_states = {
@@ -628,6 +686,36 @@ int main() {
     VK_HANDLE_ERROR(
         vkCreateCommandPool(vk_device, &command_pool_create_info, nullptr, &command_pool),
         "Could not create command pool"
+    );
+
+    // Create vertex buffer
+    const float vertices[] = {
+    //    X      Y     Z     R     G     B
+         0.0f,  0.5f, 1.0f, 1.0f, 0.0f, 0.0f,
+        -0.5f, -0.5f, 1.0f, 0.0f, 1.0f, 0.0f,
+         0.5f, -0.5f, 1.0f, 0.0f, 0.0f, 1.0f
+    };
+
+    VkBuffer vertex_buffer = create_buffer(
+        vk_device,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        sizeof(vertices)
+    );
+
+    VkDeviceMemory vertex_buffer_memory = allocate_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        vertex_buffer
+    );
+
+    write_buffer_staged(
+        vk_device,
+        physical_device,
+        graphics_queue,
+        command_pool,
+        vertex_buffer,
+        (void*)vertices,
+        sizeof(vertices)
     );
 
     // Allocate command buffer
