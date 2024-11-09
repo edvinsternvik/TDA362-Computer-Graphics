@@ -183,30 +183,36 @@ int main() {
     vkGetDeviceQueue(vk_device, present_family, 0, &present_queue);
 
     // Get surface info
-    VkSurfaceCapabilitiesKHR surface_capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
-
-    uint32_t surface_format_count;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_format_count, nullptr);
-    std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_format_count, surface_formats.data());
-
-    uint32_t present_modes_count;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_modes_count, nullptr);
-    std::vector<VkPresentModeKHR> present_modes(present_modes_count);
-    vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_modes_count, present_modes.data());
-
     struct SurfaceInfo {
         VkSurfaceFormatKHR format;
         VkPresentModeKHR present_mode;
         VkSurfaceCapabilitiesKHR capabilities;
     };
 
-    // TODO - Select optimal format, present mode and swap extent
-    SurfaceInfo surface_info = {};
-    surface_info.format = surface_formats[0];
-    surface_info.present_mode = VK_PRESENT_MODE_FIFO_KHR;
-    surface_info.capabilities = surface_capabilities;
+    auto get_surface_info = [](VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
+        VkSurfaceCapabilitiesKHR surface_capabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
+
+        uint32_t surface_format_count;
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_format_count, nullptr);
+        std::vector<VkSurfaceFormatKHR> surface_formats(surface_format_count);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &surface_format_count, surface_formats.data());
+
+        uint32_t present_modes_count;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_modes_count, nullptr);
+        std::vector<VkPresentModeKHR> present_modes(present_modes_count);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &present_modes_count, present_modes.data());
+
+        // TODO - Select optimal format, present mode and swap extent
+        SurfaceInfo surface_info = {};
+        surface_info.format = surface_formats[0];
+        surface_info.present_mode = VK_PRESENT_MODE_FIFO_KHR;
+        surface_info.capabilities = surface_capabilities;
+
+        return surface_info;
+    };
+
+    SurfaceInfo surface_info = get_surface_info(physical_device, surface);
 
     // Create render pass
     VkAttachmentDescription color_attachment = {};
@@ -451,14 +457,6 @@ int main() {
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     input_assembly.primitiveRestartEnable = VK_FALSE;
-
-    VkViewport viewport = {};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = surface_info.capabilities.currentExtent.width;
-    viewport.height = surface_info.capabilities.currentExtent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
 
     VkPipelineViewportStateCreateInfo viewport_state = {};
     viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -789,10 +787,18 @@ int main() {
         vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffer, offsets);
         vkCmdBindIndexBuffer(command_buffer, index_buffer, 0, VK_INDEX_TYPE_UINT32);
 
+        VkViewport viewport = {};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = surface_info.capabilities.currentExtent.width;
+        viewport.height = surface_info.capabilities.currentExtent.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
         VkRect2D scissor = {};
         scissor.offset = { 0, 0 };
         scissor.extent = surface_info.capabilities.currentExtent;
-        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
         vkCmdDrawIndexed(command_buffer, 9, 1, 0, 0, 0);
@@ -850,6 +856,7 @@ int main() {
         uint32_t image_index;
         VkResult r = vkAcquireNextImageKHR(vk_device, swapchain, UINT64_MAX, image_avaiable[current_frame], VK_NULL_HANDLE, &image_index);
         if(r == VK_ERROR_OUT_OF_DATE_KHR) {
+            surface_info = get_surface_info(physical_device, surface);
             vkDeviceWaitIdle(vk_device);
             recreate_swapchain(
                 vk_device,
@@ -893,6 +900,7 @@ int main() {
         r = vkQueuePresentKHR(present_queue, &present_info);
         if(r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR || framebuffer_resized) {
             framebuffer_resized = false;
+            surface_info = get_surface_info(physical_device, surface);
             vkDeviceWaitIdle(vk_device);
             recreate_swapchain(
                 vk_device,
