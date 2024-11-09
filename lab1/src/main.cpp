@@ -1,6 +1,8 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_video.h>
 #include <SDL2/SDL_vulkan.h>
+#include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
 #include <cstdint>
 #include <vulkan/vulkan.hpp>
 #include <vector>
@@ -364,7 +366,6 @@ int main() {
     auto write_buffer_staged = [create_buffer, allocate_memory](
         VkDevice device, VkPhysicalDevice physical_device, VkQueue cmd_queue,
         VkCommandPool command_pool,
-        /* VkDeviceMemory buffer_memory, */
         VkBuffer buffer,
         void* data, size_t data_size
     ) {
@@ -762,10 +763,7 @@ int main() {
     );
 
     // Create uniform buffers
-    struct Vec3 {
-        float x, y, z;
-    };
-    Vec3 uniform_data = {0.0, 0.0, 0.0};
+    glm::mat4 model_view_projection_matrix = glm::mat4(1.0f);
 
     std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> uniform_buffers;
     std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> uniform_memory;
@@ -775,7 +773,7 @@ int main() {
         uniform_buffers[i] = create_buffer(
             vk_device,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            sizeof(Vec3)
+            sizeof(model_view_projection_matrix)
         );
 
         uniform_memory[i] = allocate_memory(
@@ -784,7 +782,14 @@ int main() {
             uniform_buffers[i]
         );
 
-        vkMapMemory(vk_device, uniform_memory[i], 0, sizeof(Vec3), 0, &uniform_buffer_mapping[i]);
+        vkMapMemory(
+            vk_device,
+            uniform_memory[i],
+            0,
+            sizeof(model_view_projection_matrix),
+            0,
+            &uniform_buffer_mapping[i]
+        );
     }
 
     // Create descriptor pool
@@ -813,7 +818,7 @@ int main() {
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         VkDescriptorBufferInfo descriptor_buffer_info = {};
         descriptor_buffer_info.buffer = uniform_buffers[i];
-        descriptor_buffer_info.range = sizeof(Vec3);
+        descriptor_buffer_info.range = sizeof(model_view_projection_matrix);
         descriptor_buffer_info.offset = 0;
         VkWriteDescriptorSet write_descriptor_set = {};
         write_descriptor_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -962,8 +967,14 @@ int main() {
         vkResetCommandBuffer(command_buffers[current_frame], 0);
         record_cmd_buffer(command_buffers[current_frame], image_index, current_frame);
 
-        memcpy(uniform_buffer_mapping[current_frame], &uniform_data, sizeof(Vec3));
-        uniform_data.x += 0.001;
+        memcpy(
+            uniform_buffer_mapping[current_frame],
+            &model_view_projection_matrix,
+            sizeof(model_view_projection_matrix)
+        );
+        model_view_projection_matrix = glm::rotate(
+            model_view_projection_matrix, 0.01f, glm::vec3(0.0, 0.0, 1.0)
+        );
 
         VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         VkSubmitInfo submit_info = {};
