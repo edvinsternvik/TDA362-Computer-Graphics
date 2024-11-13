@@ -143,6 +143,11 @@ int main() {
         bool valid_swapchain = true;
         if(!valid_swapchain) continue;
 
+        // Check for supported features
+        VkPhysicalDeviceFeatures features;
+        vkGetPhysicalDeviceFeatures(curr_phys_device, &features);
+        if(!features.samplerAnisotropy) continue;
+
         graphics_family = current_graphics_family.value();
         present_family = current_present_family.value();
         physical_device = curr_phys_device;
@@ -165,6 +170,7 @@ int main() {
     }
 
     VkPhysicalDeviceFeatures device_features = {};
+    device_features.samplerAnisotropy = VK_TRUE;
 
     VkDeviceCreateInfo device_create_info = {};
     device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -1019,6 +1025,47 @@ int main() {
 
     stbi_image_free(pixels);
 
+    // Create texture image view
+    VkImageView texture_image_view;
+    VkImageViewCreateInfo view_create_info = {};
+    view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_create_info.image = texture_image;
+    view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+    view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_create_info.subresourceRange.baseMipLevel = 0;
+    view_create_info.subresourceRange.levelCount = 1;
+    view_create_info.subresourceRange.baseArrayLayer = 0;
+    view_create_info.subresourceRange.layerCount = 1;
+    VK_HANDLE_ERROR(
+        vkCreateImageView(vk_device, &view_create_info, nullptr, &texture_image_view),
+        "Could not create image view"
+    );
+
+    // Create image sampler
+    VkPhysicalDeviceProperties device_properties;
+    vkGetPhysicalDeviceProperties(physical_device, &device_properties);
+
+    VkSampler sampler;
+    VkSamplerCreateInfo sampler_create_info = {};
+    sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    sampler_create_info.minLod = 0.0f;
+    sampler_create_info.maxLod = 0.0f;
+    sampler_create_info.compareEnable = VK_FALSE;
+    sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
+    sampler_create_info.minFilter = VK_FILTER_LINEAR;
+    sampler_create_info.magFilter = VK_FILTER_LINEAR;
+    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler_create_info.mipLodBias = 0.0f;
+    sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.anisotropyEnable = VK_TRUE;
+    sampler_create_info.maxAnisotropy = device_properties.limits.maxSamplerAnisotropy;
+    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+    vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
+
     // Create descriptor pool
     VkDescriptorPool descriptor_pool;
     VkDescriptorPoolSize descriptor_pool_size = {};
@@ -1248,6 +1295,8 @@ int main() {
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
+    vkDestroySampler(vk_device, sampler, nullptr);
+    vkDestroyImageView(vk_device, texture_image_view, nullptr);
     vkDestroyImage(vk_device, texture_image, nullptr);
     vkFreeMemory(vk_device, texture_memory, nullptr);
     for(auto b : uniform_buffers) vkDestroyBuffer(vk_device, b, nullptr);
