@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.15...3.30)
 
+include(FetchContent)
+FetchContent_Declare(
+  stb
+  GIT_REPOSITORY git@github.com:nothings/stb.git
+  GIT_TAG        5c205738c191bcb0abc65c4febfa9bd25ff35234
+)
+
+FetchContent_MakeAvailable(stb)
+
 project(Lab1)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -8,7 +17,10 @@ add_executable(lab1 src/main.cpp)
 
 target_compile_features(lab1 PUBLIC cxx_std_20)
 
-target_include_directories(lab1 PRIVATE src)
+target_include_directories(lab1 PRIVATE
+    src
+    ${stb_SOURCE_DIR}
+)
 
 target_link_libraries(lab1 PUBLIC SDL2 vulkan)
 
