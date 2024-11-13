@@ -1,2 +1,2 @@
-# TDA364 - Computer Graphics
-Code for the Chalmers course TDA364 - Computer graphics
+# TDA362 - Computer Graphics
+Code for the Chalmers course TDA362 - Computer graphics
