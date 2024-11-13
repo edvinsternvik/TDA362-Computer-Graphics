@@ -309,7 +309,7 @@ int main() {
     frag_shader_stage_create_info.module = frag_shader_module;
     frag_shader_stage_create_info.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shader_stage_create_info[] = {
+    std::array<VkPipelineShaderStageCreateInfo, 2> shader_stage_create_info = {
         vert_shader_stage_create_info, frag_shader_stage_create_info
     };
 
@@ -456,10 +456,10 @@ int main() {
 
     VkVertexInputBindingDescription binding_description = {};
     binding_description.binding = 0;
-    binding_description.stride = 6 * sizeof(float);
+    binding_description.stride = 8 * sizeof(float);
     binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription attribute_descriptions[2] = {};
+    std::array<VkVertexInputAttributeDescription, 3> attribute_descriptions = {};
     attribute_descriptions[0].binding = 0;
     attribute_descriptions[0].location = 0;
     attribute_descriptions[0].offset = 0;
@@ -468,6 +468,10 @@ int main() {
     attribute_descriptions[1].location = 1;
     attribute_descriptions[1].offset = 3 * sizeof(float);
     attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attribute_descriptions[2].binding = 0;
+    attribute_descriptions[2].location = 2;
+    attribute_descriptions[2].offset = 6 * sizeof(float);
+    attribute_descriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
 
     // Specify descriptors
     VkDescriptorSetLayoutBinding ubo_layout_binding = {};
@@ -477,12 +481,23 @@ int main() {
     ubo_layout_binding.descriptorCount = 1;
     ubo_layout_binding.pImmutableSamplers = nullptr;
 
-    VkDescriptorSetLayout ubo_layout;
-    VkDescriptorSetLayoutCreateInfo ubo_layout_create_info = {};
-    ubo_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    ubo_layout_create_info.bindingCount = 1;
-    ubo_layout_create_info.pBindings = &ubo_layout_binding;
-    vkCreateDescriptorSetLayout(vk_device, &ubo_layout_create_info, nullptr, &ubo_layout);
+    VkDescriptorSetLayoutBinding sampler_layout_binding = {};
+    sampler_layout_binding.binding = 1;
+    sampler_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    sampler_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    sampler_layout_binding.descriptorCount = 1;
+    sampler_layout_binding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> layout_bindings = {
+        ubo_layout_binding, sampler_layout_binding
+    };
+
+    VkDescriptorSetLayout descriptor_set_layout;
+    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {};
+    descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    descriptor_set_layout_create_info.bindingCount = layout_bindings.size();
+    descriptor_set_layout_create_info.pBindings = layout_bindings.data();
+    vkCreateDescriptorSetLayout(vk_device, &descriptor_set_layout_create_info, nullptr, &descriptor_set_layout);
 
     // Pipeline
     std::vector<VkDynamicState> dynamic_states = {
@@ -499,8 +514,8 @@ int main() {
     vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertex_input_info.vertexBindingDescriptionCount = 1;
     vertex_input_info.pVertexBindingDescriptions = &binding_description;
-    vertex_input_info.vertexAttributeDescriptionCount = 2;
-    vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions;
+    vertex_input_info.vertexAttributeDescriptionCount = attribute_descriptions.size();
+    vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions.data();
 
     VkPipelineInputAssemblyStateCreateInfo input_assembly = {};
     input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -550,7 +565,7 @@ int main() {
     VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
     pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipeline_layout_create_info.setLayoutCount = 1;
-    pipeline_layout_create_info.pSetLayouts = &ubo_layout;
+    pipeline_layout_create_info.pSetLayouts = &descriptor_set_layout;
     pipeline_layout_create_info.pushConstantRangeCount = 0;
 
     VkPipelineLayout pipeline_layout;
@@ -561,8 +576,8 @@ int main() {
 
     VkGraphicsPipelineCreateInfo pipeline_create_info = {};
     pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipeline_create_info.stageCount = 2;
-    pipeline_create_info.pStages = shader_stage_create_info;
+    pipeline_create_info.stageCount = shader_stage_create_info.size();
+    pipeline_create_info.pStages = shader_stage_create_info.data();
     pipeline_create_info.pVertexInputState = &vertex_input_info;
     pipeline_create_info.pInputAssemblyState = &input_assembly;
     pipeline_create_info.pViewportState = &viewport_state;
@@ -738,18 +753,18 @@ int main() {
 
     // Create vertex buffer
     const float vertices[] = {
-    //    X      Y      Z     R     G     B
-         0.0f,  0.5f,  1.0f, 1.0f, 0.0f, 0.0f,
-        -0.5f, -0.5f,  1.0f, 0.0f, 1.0f, 0.0f,
-         0.5f, -0.5f,  1.0f, 0.0f, 0.0f, 1.0f,
+    //    X      Y      Z     R     G     B     U      V
+         0.0f,  0.5f,  1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+        -0.5f, -0.5f,  1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+         0.5f, -0.5f,  1.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f,
 
-         0.0f,  0.6f,  1.0f, 0.0f, 1.0f, 0.0f,
-         0.5f,  0.9f,  1.0f, 0.0f, 0.0f, 0.2f,
-        -0.5f,  0.8f,  1.0f, 0.0f, 0.0f, 0.2f,
+         0.0f,  0.6f,  1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+         0.5f,  0.9f,  1.0f, 0.0f, 0.0f, 0.2f, 0.0f, 0.0f,
+        -0.5f,  0.8f,  1.0f, 0.0f, 0.0f, 0.2f, 1.0f, 0.0f,
 
-         0.5f, -0.45f, 1.0f, 0.0f, 1.0f, 1.0f,
-         0.5f,  0.8f,  1.0f, 1.0f, 1.0f, 0.0f,
-         0.0f,  0.55f, 1.0f, 1.0f, 0.0f, 0.0f
+         0.5f, -0.45f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f,
+         0.5f,  0.8f,  1.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+         0.0f,  0.55f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f
     };
 
     VkBuffer vertex_buffer = create_buffer(
@@ -1068,20 +1083,22 @@ int main() {
 
     // Create descriptor pool
     VkDescriptorPool descriptor_pool;
-    VkDescriptorPoolSize descriptor_pool_size = {};
-    descriptor_pool_size.descriptorCount = MAX_FRAMES_IN_FLIGHT;
-    descriptor_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes = {};
+    descriptor_pool_sizes[0].descriptorCount = MAX_FRAMES_IN_FLIGHT;
+    descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_pool_sizes[1].descriptorCount = MAX_FRAMES_IN_FLIGHT;
+    descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptor_pool_create_info.maxSets = MAX_FRAMES_IN_FLIGHT;
-    descriptor_pool_create_info.poolSizeCount = 1;
-    descriptor_pool_create_info.pPoolSizes = &descriptor_pool_size;
+    descriptor_pool_create_info.poolSizeCount = descriptor_pool_sizes.size();
+    descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
     vkCreateDescriptorPool(vk_device, &descriptor_pool_create_info, nullptr, &descriptor_pool);
 
     // Create descriptor sets
     std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> descriptor_sets;
     std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT> descriptor_set_layouts;
-    descriptor_set_layouts.fill(ubo_layout);
+    descriptor_set_layouts.fill(descriptor_set_layout);
     VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
     descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     descriptor_set_allocate_info.descriptorPool = descriptor_pool;
@@ -1094,15 +1111,33 @@ int main() {
         descriptor_buffer_info.buffer = uniform_buffers[i];
         descriptor_buffer_info.range = sizeof(model_view_projection_matrix);
         descriptor_buffer_info.offset = 0;
-        VkWriteDescriptorSet write_descriptor_set = {};
-        write_descriptor_set.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write_descriptor_set.descriptorCount = 1;
-        write_descriptor_set.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        write_descriptor_set.dstSet = descriptor_sets[i];
-        write_descriptor_set.dstBinding = 0;
-        write_descriptor_set.dstArrayElement = 0;
-        write_descriptor_set.pBufferInfo = &descriptor_buffer_info;
-        vkUpdateDescriptorSets(vk_device, 1, &write_descriptor_set, 0, nullptr);
+
+        VkDescriptorImageInfo descriptor_image_info = {};
+        descriptor_image_info.sampler = sampler;
+        descriptor_image_info.imageView = texture_image_view;
+        descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        
+        std::array<VkWriteDescriptorSet, 2> descriptor_set_writes = {};
+        descriptor_set_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_set_writes[0].descriptorCount = 1;
+        descriptor_set_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor_set_writes[0].dstSet = descriptor_sets[i];
+        descriptor_set_writes[0].dstBinding = 0;
+        descriptor_set_writes[0].dstArrayElement = 0;
+        descriptor_set_writes[0].pBufferInfo = &descriptor_buffer_info;
+        descriptor_set_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_set_writes[1].descriptorCount = 1;
+        descriptor_set_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor_set_writes[1].dstSet = descriptor_sets[i];
+        descriptor_set_writes[1].dstBinding = 1;
+        descriptor_set_writes[1].dstArrayElement = 0;
+        descriptor_set_writes[1].pImageInfo = &descriptor_image_info;
+        vkUpdateDescriptorSets(
+            vk_device,
+            descriptor_set_writes.size(),
+            descriptor_set_writes.data(),
+            0, nullptr
+        );
     }
 
     // Allocate command buffer
@@ -1302,7 +1337,7 @@ int main() {
     for(auto b : uniform_buffers) vkDestroyBuffer(vk_device, b, nullptr);
     for(auto m : uniform_memory) vkFreeMemory(vk_device, m, nullptr);
     vkDestroyDescriptorPool(vk_device, descriptor_pool, nullptr);
-    vkDestroyDescriptorSetLayout(vk_device, ubo_layout, nullptr);
+    vkDestroyDescriptorSetLayout(vk_device, descriptor_set_layout, nullptr);
     vkDestroyBuffer(vk_device, index_buffer, nullptr);
     vkFreeMemory(vk_device, index_buffer_memory, nullptr);
     vkDestroyBuffer(vk_device, vertex_buffer, nullptr);
