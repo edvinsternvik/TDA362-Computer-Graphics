@@ -1,4 +1,5 @@
 #include "labhelper.hpp"
+#include <vulkan/vulkan_core.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -72,46 +73,10 @@ int main() {
     );
 
     // Create shader
-    auto vert_shader_src = read_file("vert.spv");
-    auto frag_shader_src = read_file("frag.spv");
-    auto vert_shader_module = create_shader_module(vk_device, vert_shader_src);
-    auto frag_shader_module = create_shader_module(vk_device, frag_shader_src);
-
-    VkPipelineShaderStageCreateInfo vert_shader_stage_create_info{};
-    vert_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vert_shader_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vert_shader_stage_create_info.module = vert_shader_module;
-    vert_shader_stage_create_info.pName = "main";
-
-    VkPipelineShaderStageCreateInfo frag_shader_stage_create_info{};
-    frag_shader_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    frag_shader_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    frag_shader_stage_create_info.module = frag_shader_module;
-    frag_shader_stage_create_info.pName = "main";
-
-    std::array<VkPipelineShaderStageCreateInfo, 2> shader_stage_create_info = {
-        vert_shader_stage_create_info, frag_shader_stage_create_info
-    };
-
-    // Specify vertex data description
-    VkVertexInputBindingDescription binding_description = {};
-    binding_description.binding = 0;
-    binding_description.stride = 8 * sizeof(float);
-    binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    std::array<VkVertexInputAttributeDescription, 3> attribute_descriptions = {};
-    attribute_descriptions[0].binding = 0;
-    attribute_descriptions[0].location = 0;
-    attribute_descriptions[0].offset = 0;
-    attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attribute_descriptions[1].binding = 0;
-    attribute_descriptions[1].location = 1;
-    attribute_descriptions[1].offset = 3 * sizeof(float);
-    attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attribute_descriptions[2].binding = 0;
-    attribute_descriptions[2].location = 2;
-    attribute_descriptions[2].offset = 6 * sizeof(float);
-    attribute_descriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+    std::vector<char> vert_shader_src = read_file("vert.spv");
+    std::vector<char> frag_shader_src = read_file("frag.spv");
+    VkShaderModule vert_shader_module = create_shader_module(vk_device, vert_shader_src);
+    VkShaderModule frag_shader_module = create_shader_module(vk_device, frag_shader_src);
 
     // Specify descriptors
     VkDescriptorSetLayoutBinding ubo_layout_binding = {};
@@ -128,124 +93,49 @@ int main() {
     sampler_layout_binding.descriptorCount = 1;
     sampler_layout_binding.pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> layout_bindings = {
-        ubo_layout_binding, sampler_layout_binding
-    };
-
-    VkDescriptorSetLayout descriptor_set_layout;
-    VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info = {};
-    descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    descriptor_set_layout_create_info.bindingCount = layout_bindings.size();
-    descriptor_set_layout_create_info.pBindings = layout_bindings.data();
-    vkCreateDescriptorSetLayout(vk_device, &descriptor_set_layout_create_info, nullptr, &descriptor_set_layout);
-
-    // Pipeline
-    std::vector<VkDynamicState> dynamic_states = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR
-    };
-
-    VkPipelineDynamicStateCreateInfo dynamic_state{};
-    dynamic_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamic_state.dynamicStateCount = dynamic_states.size();
-    dynamic_state.pDynamicStates = dynamic_states.data();
-
-    VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
-    vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex_input_info.vertexBindingDescriptionCount = 1;
-    vertex_input_info.pVertexBindingDescriptions = &binding_description;
-    vertex_input_info.vertexAttributeDescriptionCount = attribute_descriptions.size();
-    vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions.data();
-
-    VkPipelineInputAssemblyStateCreateInfo input_assembly = {};
-    input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    input_assembly.primitiveRestartEnable = VK_FALSE;
-
-    VkPipelineViewportStateCreateInfo viewport_state = {};
-    viewport_state.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewport_state.viewportCount = 1;
-    viewport_state.scissorCount = 1;
-
-    VkPipelineRasterizationStateCreateInfo rasterizer = {};
-    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-    rasterizer.depthBiasEnable = VK_FALSE;
-
-    VkPipelineMultisampleStateCreateInfo multisampling = {};
-    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-    VkPipelineDepthStencilStateCreateInfo depth_stencil = {};
-    depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depth_stencil.depthTestEnable = VK_TRUE;
-    depth_stencil.depthWriteEnable = VK_TRUE;
-    depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    depth_stencil.depthBoundsTestEnable = VK_FALSE;
-    depth_stencil.minDepthBounds = 0.0f;
-    depth_stencil.maxDepthBounds = 1.0f;
-    depth_stencil.stencilTestEnable = VK_FALSE;
-    depth_stencil.front = {};
-    depth_stencil.back = {};
-
-    VkPipelineColorBlendAttachmentState color_blend_attachment = {};
-    color_blend_attachment.colorWriteMask =
-          VK_COLOR_COMPONENT_R_BIT
-        | VK_COLOR_COMPONENT_G_BIT
-        | VK_COLOR_COMPONENT_B_BIT
-        | VK_COLOR_COMPONENT_A_BIT;
-    color_blend_attachment.blendEnable = VK_TRUE;
-    color_blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    color_blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    color_blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-    color_blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    color_blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    color_blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
-
-    VkPipelineColorBlendStateCreateInfo color_blending = {};
-    color_blending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    color_blending.logicOpEnable = VK_FALSE;
-    color_blending.attachmentCount = 1;
-    color_blending.pAttachments = &color_blend_attachment;
-
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
-    pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipeline_layout_create_info.setLayoutCount = 1;
-    pipeline_layout_create_info.pSetLayouts = &descriptor_set_layout;
-    pipeline_layout_create_info.pushConstantRangeCount = 0;
-
-    VkPipelineLayout pipeline_layout;
-    VK_HANDLE_ERROR(
-        vkCreatePipelineLayout(vk_device, &pipeline_layout_create_info, nullptr, &pipeline_layout),
-        "Could not create pipeline layout"
+    VkDescriptorSetLayout descriptor_set_layout = create_descriptor_set_layout(
+        vk_device,
+        { ubo_layout_binding, sampler_layout_binding }
     );
 
-    VkGraphicsPipelineCreateInfo pipeline_create_info = {};
-    pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipeline_create_info.stageCount = shader_stage_create_info.size();
-    pipeline_create_info.pStages = shader_stage_create_info.data();
-    pipeline_create_info.pVertexInputState = &vertex_input_info;
-    pipeline_create_info.pInputAssemblyState = &input_assembly;
-    pipeline_create_info.pViewportState = &viewport_state;
-    pipeline_create_info.pRasterizationState = &rasterizer;
-    pipeline_create_info.pMultisampleState = &multisampling;
-    pipeline_create_info.pDepthStencilState = &depth_stencil;
-    pipeline_create_info.pColorBlendState = &color_blending;
-    pipeline_create_info.pDynamicState = &dynamic_state;
-    pipeline_create_info.layout = pipeline_layout;
-    pipeline_create_info.renderPass = render_pass;
-    pipeline_create_info.subpass = 0;
+    // Specify vertex data description
+    VkVertexInputBindingDescription binding_description = {};
+    binding_description.binding = 0;
+    binding_description.stride = 8 * sizeof(float);
+    binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkPipeline graphics_pipeline;
-    VK_HANDLE_ERROR(
-        vkCreateGraphicsPipelines(vk_device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &graphics_pipeline),
-        "Could not create graphics pipeline"
+    VkVertexInputAttributeDescription position_attribute;
+    position_attribute.binding = 0;
+    position_attribute.location = 0;
+    position_attribute.offset = 0;
+    position_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+
+    VkVertexInputAttributeDescription color_attribute;
+    color_attribute.binding = 0;
+    color_attribute.location = 1;
+    color_attribute.offset = 3 * sizeof(float);
+    color_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+
+    VkVertexInputAttributeDescription uv_attribute;
+    uv_attribute.binding = 0;
+    uv_attribute.location = 2;
+    uv_attribute.offset = 6 * sizeof(float);
+    uv_attribute.format = VK_FORMAT_R32G32_SFLOAT;
+
+    // Pipeline
+    VkPipelineLayout pipeline_layout = create_pipeline_layout(
+        vk_device,
+        { descriptor_set_layout }
+    );
+
+    VkPipeline graphics_pipeline = create_graphics_pipeline(
+        vk_device,
+        pipeline_layout,
+        render_pass,
+        { binding_description },
+        { position_attribute, color_attribute, uv_attribute },
+        vert_shader_module,
+        frag_shader_module
     );
 
     vkDestroyShaderModule(vk_device, vert_shader_module, nullptr);

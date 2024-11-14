@@ -4,6 +4,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_video.h>
 #include <SDL2/SDL_vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #define VK_HANDLE_ERROR(X, msg) if(X != VK_SUCCESS) { throw std::runtime_error(msg); }
 
@@ -29,6 +30,26 @@ VkRenderPass create_render_pass(
     VkDevice device,
     VkAttachmentDescription color_attachment,
     VkAttachmentDescription depth_attachment
+);
+
+VkDescriptorSetLayout create_descriptor_set_layout(
+    VkDevice device,
+    const std::vector<VkDescriptorSetLayoutBinding>& layout_bindings
+);
+
+VkPipelineLayout create_pipeline_layout(
+    VkDevice device,
+    const std::vector<VkDescriptorSetLayout>& descriptor_set_layouts
+);
+
+VkPipeline create_graphics_pipeline(
+    VkDevice device,
+    VkPipelineLayout pipeline_layout,
+    VkRenderPass render_pass,
+    const std::vector<VkVertexInputBindingDescription>& vertex_binding_descriptions,
+    const std::vector<VkVertexInputAttributeDescription>& vertex_attribute_descriptions,
+    VkShaderModule vert_shader_module,
+    VkShaderModule frag_shader_module
 );
 
 SurfaceInfo get_surface_info(
