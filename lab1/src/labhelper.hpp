@@ -25,6 +25,12 @@ void init_vulkan(
     VkSurfaceKHR* surface
 );
 
+VkRenderPass create_render_pass(
+    VkDevice device,
+    VkAttachmentDescription color_attachment,
+    VkAttachmentDescription depth_attachment
+);
+
 SurfaceInfo get_surface_info(
     VkPhysicalDevice physical_device,
     VkSurfaceKHR surface
