@@ -13,7 +13,7 @@ project(Lab1)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_executable(lab1 src/main.cpp)
+add_executable(lab1 src/main.cpp src/labhelper.cpp)
 
 target_compile_features(lab1 PUBLIC cxx_std_20)
 
