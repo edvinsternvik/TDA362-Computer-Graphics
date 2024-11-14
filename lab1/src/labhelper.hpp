@@ -21,6 +21,7 @@ void init_vulkan(
     VkDevice* vk_device, VkPhysicalDevice* physical_device,
     uint32_t* graphics_family, uint32_t* present_family,
     VkQueue* graphics_queue, VkQueue* present_queue,
+    VkCommandPool* command_pool,
     VkSurfaceKHR* surface
 );
 

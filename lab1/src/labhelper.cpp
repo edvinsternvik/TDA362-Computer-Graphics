@@ -20,6 +20,7 @@ void init_vulkan(
     VkDevice* vk_device, VkPhysicalDevice* physical_device,
     uint32_t* graphics_family, uint32_t* present_family,
     VkQueue* graphics_queue, VkQueue* present_queue,
+    VkCommandPool* command_pool,
     VkSurfaceKHR* surface
 ) {
     // Check for validation layers
@@ -161,6 +162,17 @@ void init_vulkan(
     // Get queues
     vkGetDeviceQueue(*vk_device, *graphics_family, 0, graphics_queue);
     vkGetDeviceQueue(*vk_device, *present_family, 0, present_queue);
+
+    // Create command pool
+    VkCommandPoolCreateInfo command_pool_create_info = {};
+    command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    command_pool_create_info.queueFamilyIndex = *graphics_family;
+    command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    VK_HANDLE_ERROR(
+        vkCreateCommandPool(*vk_device, &command_pool_create_info, nullptr, command_pool),
+        "Could not create command pool"
+    );
 }
 
 SurfaceInfo get_surface_info(VkPhysicalDevice physical_device, VkSurfaceKHR surface) {

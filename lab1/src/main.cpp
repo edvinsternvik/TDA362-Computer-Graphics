@@ -31,6 +31,7 @@ int main() {
     VkPhysicalDevice physical_device;
     uint32_t graphics_family, present_family;
     VkQueue graphics_queue, present_queue;
+    VkCommandPool command_pool;
     VkSurfaceKHR surface;
     init_vulkan(
         window,
@@ -38,6 +39,7 @@ int main() {
         &vk_device, &physical_device,
         &graphics_family, &present_family,
         &graphics_queue, &present_queue,
+        &command_pool,
         &surface
     );
 
@@ -290,18 +292,6 @@ int main() {
 
     vkDestroyShaderModule(vk_device, vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, frag_shader_module, nullptr);
-
-    // Create command pool
-    VkCommandPoolCreateInfo command_pool_create_info = {};
-    command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    command_pool_create_info.queueFamilyIndex = graphics_family;
-    command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-    VkCommandPool command_pool;
-    VK_HANDLE_ERROR(
-        vkCreateCommandPool(vk_device, &command_pool_create_info, nullptr, &command_pool),
-        "Could not create command pool"
-    );
 
     // Create swapchain
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
