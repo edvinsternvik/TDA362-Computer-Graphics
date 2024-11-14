@@ -1,6 +1,10 @@
 #include "labhelper.hpp"
 #include <set>
 #include <fstream>
+#include <vulkan/vulkan_core.h>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
 
 #ifdef NDEBUG
 const std::array<const char*, 0> VALIDATION_LAYERS = { };
@@ -388,6 +392,72 @@ VkPipeline create_graphics_pipeline(
     return graphics_pipeline;
 }
 
+void load_image(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    VkImage* image, VkDeviceMemory* memory,
+    const char* file_name,
+    int* width, int* height, int* channels,
+    int required_comp,
+    VkImageUsageFlags usage,
+    VkFormat format,
+    VkImageTiling tiling,
+    VkMemoryPropertyFlags memory_properties
+) {
+    stbi_uc* pixels = stbi_load(
+        file_name,
+        width, height, channels,
+        required_comp
+    );
+    if(pixels == nullptr) throw std::runtime_error("Could not load texture");
+    size_t image_size = *width * *width * required_comp;
+
+    *image = create_image(
+        device,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_TILING_OPTIMAL,
+        *width, *height
+    );
+
+    *memory = allocate_image_memory(
+        device, physical_device,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        *image
+    );
+
+    transition_image_layout(
+        device,
+        command_pool,
+        command_queue,
+        *image,
+        VK_FORMAT_R8G8B8_SRGB,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+    );
+
+    write_image_staged(
+        device, physical_device,
+        command_queue,
+        command_pool,
+        *image,
+        pixels, image_size,
+        *width, *height
+    );
+
+    transition_image_layout(
+        device,
+        command_pool,
+        command_queue,
+        *image,
+        VK_FORMAT_R8G8B8_SRGB,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
+
+    stbi_image_free(pixels);
+}
+
 SurfaceInfo get_surface_info(VkPhysicalDevice physical_device, VkSurfaceKHR surface) {
     VkSurfaceCapabilitiesKHR surface_capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &surface_capabilities);
@@ -458,13 +528,19 @@ void submit_command(
     VkQueue cmd_queue,
     VkCommandBuffer cmd_buffer
 ) {
-    vkEndCommandBuffer(cmd_buffer);
+    VK_HANDLE_ERROR(
+        vkEndCommandBuffer(cmd_buffer),
+        "Could not end command buffer"
+    );
 
     VkSubmitInfo submit_info = {};
     submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &cmd_buffer;
-    vkQueueSubmit(cmd_queue, 1, &submit_info, VK_NULL_HANDLE);
+    VK_HANDLE_ERROR(
+        vkQueueSubmit(cmd_queue, 1, &submit_info, VK_NULL_HANDLE),
+        "Could not submit to queue"
+    );
 }
 
 VkBuffer create_buffer(
@@ -486,6 +562,37 @@ VkBuffer create_buffer(
 
     return buffer;
 }
+
+VkImage create_image(
+    VkDevice device,
+    VkImageUsageFlags usage,
+    VkFormat format,
+    VkImageTiling tiling,
+    uint32_t width, uint32_t height
+) {
+    VkImage image;
+    VkImageCreateInfo image_create_info = {};
+    image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    image_create_info.usage = usage;
+    image_create_info.extent.width = width;
+    image_create_info.extent.height = height;
+    image_create_info.extent.depth = 1;
+    image_create_info.format = format;
+    image_create_info.tiling = tiling;
+    image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_create_info.imageType = VK_IMAGE_TYPE_2D;
+    image_create_info.mipLevels = 1;
+    image_create_info.arrayLayers = 1;
+    image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    image_create_info.queueFamilyIndexCount = 0;
+    VK_HANDLE_ERROR(
+        vkCreateImage(device, &image_create_info, nullptr, &image),
+        "Could not create image"
+    );
+
+    return image;
+};
 
 uint32_t get_suitable_memory_type_index(
     VkPhysicalDevice physical_device,
@@ -666,7 +773,11 @@ VkDeviceMemory allocate_image_memory(
         vkAllocateMemory(device, &alloc_info, nullptr, &image_memory),
         "Could not allocate buffer memory"
     );
-    vkBindImageMemory(device, image, image_memory, 0);
+
+    VK_HANDLE_ERROR(
+        vkBindImageMemory(device, image, image_memory, 0),
+        "Could not bind image memory"
+    );
 
     return image_memory;
 }
@@ -893,7 +1004,10 @@ void write_image_staged(
     );
 
     void* buffer_data;
-    vkMapMemory(device, staging_buffer_memory, 0, data_size, 0, &buffer_data);
+    VK_HANDLE_ERROR(
+        vkMapMemory(device, staging_buffer_memory, 0, data_size, 0, &buffer_data),
+        "Could not map image memory"
+    );
     memcpy(buffer_data, data, data_size);
     vkUnmapMemory(device, staging_buffer_memory);
 

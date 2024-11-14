@@ -7,9 +7,6 @@
 #include <vector>
 #include <array>
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
@@ -251,65 +248,20 @@ int main() {
 
     // Create texture image
     int texture_width, texture_height, texture_channels;
-    int texture_req_comp = STBI_rgb_alpha;
-    stbi_uc* pixels = stbi_load("texture.jpg", &texture_width, &texture_height, &texture_channels, texture_req_comp);
-    if(pixels == nullptr) throw std::runtime_error("Could not load texture");
-    size_t texture_size = texture_width * texture_height * texture_req_comp;
-
     VkImage texture_image;
-    VkImageCreateInfo image_create_info = {};
-    image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    image_create_info.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    image_create_info.extent.width = texture_width;
-    image_create_info.extent.height = texture_height;
-    image_create_info.extent.depth = 1;
-    image_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-    image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;
-    image_create_info.imageType = VK_IMAGE_TYPE_2D;
-    image_create_info.mipLevels = 1;
-    image_create_info.arrayLayers = 1;
-    image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    image_create_info.queueFamilyIndexCount = 0;
-    vkCreateImage(vk_device, &image_create_info, nullptr, &texture_image);
-
-    VkDeviceMemory texture_memory = allocate_image_memory(
+    VkDeviceMemory texture_memory;
+    load_image(
         vk_device, physical_device,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        texture_image
+        command_pool, graphics_queue,
+        &texture_image, &texture_memory,
+        "texture.jpg",
+        &texture_width, &texture_height, &texture_channels,
+        STBI_rgb_alpha,
+        VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
-
-    transition_image_layout(
-        vk_device,
-        command_pool,
-        graphics_queue,
-        texture_image,
-        VK_FORMAT_R8G8B8_SRGB,
-        VK_IMAGE_LAYOUT_UNDEFINED,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-    );
-
-    write_image_staged(
-        vk_device, physical_device,
-        graphics_queue,
-        command_pool,
-        texture_image,
-        pixels, texture_size,
-        texture_width, texture_height
-    );
-
-    transition_image_layout(
-        vk_device,
-        command_pool,
-        graphics_queue,
-        texture_image,
-        VK_FORMAT_R8G8B8_SRGB,
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-    );
-
-    stbi_image_free(pixels);
 
     // Create texture image view
     VkImageView texture_image_view;

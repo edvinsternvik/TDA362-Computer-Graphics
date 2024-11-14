@@ -5,6 +5,7 @@
 #include <SDL2/SDL_video.h>
 #include <SDL2/SDL_vulkan.h>
 #include <vulkan/vulkan_core.h>
+#include <stb_image.h>
 
 #define VK_HANDLE_ERROR(X, msg) if(X != VK_SUCCESS) { throw std::runtime_error(msg); }
 
@@ -52,6 +53,19 @@ VkPipeline create_graphics_pipeline(
     VkShaderModule frag_shader_module
 );
 
+void load_image(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    VkImage* image, VkDeviceMemory* memory,
+    const char* file_name,
+    int* width, int* height, int* channels,
+    int required_comp,
+    VkImageUsageFlags usage,
+    VkFormat format,
+    VkImageTiling tiling,
+    VkMemoryPropertyFlags memory_properties
+);
+
 SurfaceInfo get_surface_info(
     VkPhysicalDevice physical_device,
     VkSurfaceKHR surface
@@ -80,6 +94,14 @@ VkBuffer create_buffer(
     VkDevice device,
     VkBufferUsageFlags usage,
     size_t buffer_size
+);
+
+VkImage create_image(
+    VkDevice device,
+    VkImageUsageFlags usage,
+    VkFormat format,
+    VkImageTiling tiling,
+    uint32_t width, uint32_t height
 );
 
 uint32_t get_suitable_memory_type_index(
