@@ -1087,12 +1087,13 @@ VkDescriptorPool imgui_init(
     return imgui_descriptor_pool;
 };
 
-
-void imgui_render(VkCommandBuffer command_buffer) {
+void imgui_new_frame() {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
-    ImGui::ShowDemoWindow();
+}
+
+void imgui_render(VkCommandBuffer command_buffer) {
     ImGui::Render();
     ImDrawData* imgui_draw_data = ImGui::GetDrawData();
     ImGui_ImplVulkan_RenderDrawData(imgui_draw_data, command_buffer);

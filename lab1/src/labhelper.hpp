@@ -200,5 +200,6 @@ VkDescriptorPool imgui_init(
     VkRenderPass render_pass
 );
 
+void imgui_new_frame();
 void imgui_render(VkCommandBuffer command_buffer);
 void imgui_cleanup(VkDevice device, VkDescriptorPool imgui_descriptor_pool);
