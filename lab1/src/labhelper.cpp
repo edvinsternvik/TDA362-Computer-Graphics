@@ -132,7 +132,7 @@ void init_vulkan(
         break;
     }
 
-    std::set<uint32_t> unique_queue_families = {graphics_family, present_family};
+    std::set<uint32_t> unique_queue_families = {*graphics_family, *present_family};
 
     // Get logical device
     float queue_priorities[1] = { 1.0 };
