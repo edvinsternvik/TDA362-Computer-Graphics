@@ -191,3 +191,14 @@ void write_image_staged(
     VkImage image,
     void* data, size_t data_size, uint32_t width, uint32_t height
 );
+
+VkDescriptorPool imgui_init(
+    VkInstance instance,
+    SDL_Window* window,
+    VkDevice device, VkPhysicalDevice physical_device,
+    uint32_t queue_family, VkQueue queue,
+    VkRenderPass render_pass
+);
+
+void imgui_render(VkCommandBuffer command_buffer);
+void imgui_cleanup(VkDevice device, VkDescriptorPool imgui_descriptor_pool);

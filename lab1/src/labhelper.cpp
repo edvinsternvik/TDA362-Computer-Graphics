@@ -6,6 +6,10 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <imgui.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_vulkan.h>
+
 #ifdef NDEBUG
 const std::array<const char*, 0> VALIDATION_LAYERS = { };
 #else
@@ -1040,4 +1044,63 @@ void write_image_staged(
     vkFreeCommandBuffers(device, command_pool, 1, &cmd_buffer);
     vkDestroyBuffer(device, staging_buffer, nullptr);
     vkFreeMemory(device, staging_buffer_memory, nullptr);
+}
+
+VkDescriptorPool imgui_init(
+    VkInstance instance,
+    SDL_Window* window,
+    VkDevice device, VkPhysicalDevice physical_device,
+    uint32_t queue_family, VkQueue queue,
+    VkRenderPass render_pass
+) {
+    VkDescriptorPool imgui_descriptor_pool;
+    std::array<VkDescriptorPoolSize, 1> imgui_descriptor_pool_sizes = {};
+    imgui_descriptor_pool_sizes[0].descriptorCount = 1;
+    imgui_descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    VkDescriptorPoolCreateInfo imgui_descriptor_pool_create_info = {};
+    imgui_descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    imgui_descriptor_pool_create_info.maxSets = 1;
+    imgui_descriptor_pool_create_info.poolSizeCount = imgui_descriptor_pool_sizes.size();
+    imgui_descriptor_pool_create_info.pPoolSizes = imgui_descriptor_pool_sizes.data();
+    imgui_descriptor_pool_create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    vkCreateDescriptorPool(device, &imgui_descriptor_pool_create_info, nullptr, &imgui_descriptor_pool);
+
+    ImGui::CreateContext();
+    ImGui_ImplSDL2_InitForVulkan(window);
+    ImGui_ImplVulkan_InitInfo imgui_init_info = {};
+    imgui_init_info.Instance = instance;
+    imgui_init_info.PhysicalDevice = physical_device;
+    imgui_init_info.Device = device;
+    imgui_init_info.QueueFamily = queue_family;
+    imgui_init_info.Queue = queue;
+    imgui_init_info.PipelineCache = nullptr;
+    imgui_init_info.DescriptorPool = imgui_descriptor_pool;
+    imgui_init_info.RenderPass = render_pass;
+    imgui_init_info.Subpass = 0;
+    imgui_init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
+    imgui_init_info.ImageCount = MAX_FRAMES_IN_FLIGHT;
+    imgui_init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    imgui_init_info.Allocator = nullptr;
+    imgui_init_info.CheckVkResultFn = nullptr;
+    ImGui_ImplVulkan_Init(&imgui_init_info);
+
+    return imgui_descriptor_pool;
+};
+
+
+void imgui_render(VkCommandBuffer command_buffer) {
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL2_NewFrame();
+    ImGui::NewFrame();
+    ImGui::ShowDemoWindow();
+    ImGui::Render();
+    ImDrawData* imgui_draw_data = ImGui::GetDrawData();
+    ImGui_ImplVulkan_RenderDrawData(imgui_draw_data, command_buffer);
+}
+
+void imgui_cleanup(VkDevice device, VkDescriptorPool imgui_descriptor_pool) {
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+    vkDestroyDescriptorPool(device, imgui_descriptor_pool, nullptr);
 }
