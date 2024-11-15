@@ -7,6 +7,10 @@
 #include <vector>
 #include <array>
 
+#include <imgui.h>
+#include <backends/imgui_impl_sdl2.h>
+#include <backends/imgui_impl_vulkan.h>
+
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
 
@@ -377,7 +381,7 @@ int main() {
     );
 
     // Record command buffer for frame rendering
-    auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
+    auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame, ImDrawData* imgui_draw_data) {
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -431,6 +435,8 @@ int main() {
 
         vkCmdDrawIndexed(command_buffer, 9, 1, 0, 0, 0);
 
+        ImGui_ImplVulkan_RenderDrawData(imgui_draw_data, command_buffer);
+
         vkCmdEndRenderPass(command_buffer);
         VK_HANDLE_ERROR(
             vkEndCommandBuffer(command_buffer),
@@ -465,6 +471,38 @@ int main() {
         );
     }
 
+    // ImGUI
+    VkDescriptorPool imgui_descriptor_pool;
+    std::array<VkDescriptorPoolSize, 1> imgui_descriptor_pool_sizes = {};
+    imgui_descriptor_pool_sizes[0].descriptorCount = 1;
+    imgui_descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    VkDescriptorPoolCreateInfo imgui_descriptor_pool_create_info = {};
+    imgui_descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    imgui_descriptor_pool_create_info.maxSets = 1;
+    imgui_descriptor_pool_create_info.poolSizeCount = imgui_descriptor_pool_sizes.size();
+    imgui_descriptor_pool_create_info.pPoolSizes = imgui_descriptor_pool_sizes.data();
+    imgui_descriptor_pool_create_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    vkCreateDescriptorPool(vk_device, &imgui_descriptor_pool_create_info, nullptr, &imgui_descriptor_pool);
+
+    ImGui::CreateContext();
+    ImGui_ImplSDL2_InitForVulkan(window);
+    ImGui_ImplVulkan_InitInfo imgui_init_info = {};
+    imgui_init_info.Instance = vk_instance;
+    imgui_init_info.PhysicalDevice = physical_device;
+    imgui_init_info.Device = vk_device;
+    imgui_init_info.QueueFamily = graphics_family;
+    imgui_init_info.Queue = graphics_queue;
+    imgui_init_info.PipelineCache = nullptr;
+    imgui_init_info.DescriptorPool = imgui_descriptor_pool;
+    imgui_init_info.RenderPass = render_pass;
+    imgui_init_info.Subpass = 0;
+    imgui_init_info.MinImageCount = MAX_FRAMES_IN_FLIGHT;
+    imgui_init_info.ImageCount = MAX_FRAMES_IN_FLIGHT;
+    imgui_init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    imgui_init_info.Allocator = nullptr;
+    imgui_init_info.CheckVkResultFn = nullptr;
+    ImGui_ImplVulkan_Init(&imgui_init_info);
+
     //
 
     uint32_t current_frame = 0;
@@ -474,9 +512,17 @@ int main() {
     SDL_Event e; bool quit = false;
     while(quit == false) {
         while(SDL_PollEvent(&e)) {
+            ImGui_ImplSDL2_ProcessEvent(&e);
             if(e.type == SDL_QUIT) quit = true;
             if(e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) framebuffer_resized = true;
         }
+
+        ImGui_ImplVulkan_NewFrame();
+        ImGui_ImplSDL2_NewFrame();
+        ImGui::NewFrame();
+        ImGui::ShowDemoWindow();
+        ImGui::Render();
+        ImDrawData* imgui_draw_data = ImGui::GetDrawData();
 
         // Render frame
         vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
@@ -502,7 +548,7 @@ int main() {
         vkResetFences(vk_device, 1, &frame_in_flight[current_frame]);
 
         vkResetCommandBuffer(command_buffers[current_frame], 0);
-        render_frame(command_buffers[current_frame], image_index, current_frame);
+        render_frame(command_buffers[current_frame], image_index, current_frame, imgui_draw_data);
 
         memcpy(
             uniform_buffer_mapping[current_frame],
@@ -563,6 +609,10 @@ int main() {
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+    vkDestroyDescriptorPool(vk_device, imgui_descriptor_pool, nullptr);
     vkDestroySampler(vk_device, sampler, nullptr);
     vkDestroyImageView(vk_device, texture_image_view, nullptr);
     vkDestroyImage(vk_device, texture_image, nullptr);
