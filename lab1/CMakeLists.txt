@@ -25,8 +25,9 @@ add_custom_command(
     DEPENDS src/shader.frag
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/lab1"
 )
-add_custom_target(generate_shaders
+
+add_custom_target(generate_shaders_lab1
     DEPENDS vert.spv frag.spv
 )
 
-add_dependencies(lab1 generate_shaders)
+add_dependencies(lab1 generate_shaders_lab1)
