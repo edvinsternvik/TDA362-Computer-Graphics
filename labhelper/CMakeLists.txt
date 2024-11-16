@@ -11,8 +11,13 @@ FetchContent_Declare(
   GIT_REPOSITORY git@github.com:ocornut/imgui.git
   GIT_TAG        v1.91.5
 )
+FetchContent_Declare(
+  tinyobjloader
+  GIT_REPOSITORY git@github.com:tinyobjloader/tinyobjloader.git
+  GIT_TAG        5cd3842fdca3b06cc993801cff1825fc6d999068
+)
 
-FetchContent_MakeAvailable(stb imgui)
+FetchContent_MakeAvailable(stb imgui tinyobjloader)
 
 project(labhelper)
 
@@ -43,4 +48,4 @@ target_include_directories(labhelper PUBLIC
     ${stb_SOURCE_DIR}
 )
 
-target_link_libraries(labhelper PUBLIC SDL2 vulkan imgui)
+target_link_libraries(labhelper PUBLIC SDL2 vulkan imgui tinyobjloader)

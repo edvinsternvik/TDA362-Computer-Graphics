@@ -163,15 +163,21 @@ int main() {
     //     X     Y        Z     U     V
         -10.0f, 0.0f,  -10.0f, 0.0f, 0.0f,
         -10.0f, 0.0f, -330.0f, 0.0f, 15.0f,
+         10.0f, 0.0f,  -10.0f, 1.0f, 0.0f,
+
+        -10.0f, 0.0f, -330.0f, 0.0f, 15.0f,
          10.0f, 0.0f, -330.0f, 1.0f, 15.0f,
          10.0f, 0.0f,  -10.0f, 1.0f, 0.0f
     };
 
     vertices[1] = {
-        -0.5, -0.5, 0.0, 0.0, 0.0,
-         0.5, -0.5, 0.0, 1.0, 0.0,
          0.5,  0.5, 0.0, 1.0, 1.0,
-        -0.5,  0.5, 0.0, 0.0, 1.0
+         0.5, -0.5, 0.0, 1.0, 0.0,
+        -0.5, -0.5, 0.0, 0.0, 0.0,
+
+        -0.5, -0.5, 0.0, 0.0, 0.0,
+        -0.5,  0.5, 0.0, 0.0, 1.0,
+         0.5,  0.5, 0.0, 1.0, 1.0
     };
 
     std::array<VkBuffer, 2> vertex_buffers;
@@ -196,41 +202,6 @@ int main() {
             command_pool,
             vertex_buffers[i],
             vertices[i].data(), sizeof(float) * vertices[i].size()
-        );
-    }
-
-    // Create index buffer
-    std::vector<int> indices[2];
-    indices[0] = {
-        0, 1, 3,
-        1, 2, 3
-    };
-    indices[1] = {
-        2, 1, 0,
-        0, 3, 2
-    };
-
-    std::array<VkBuffer, 2> index_buffers;
-    std::array<VkDeviceMemory, 2> index_buffer_memories;
-    for(int i = 0; i < 2; ++i) {
-        index_buffers[i] = create_buffer(
-            vk_device,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-            sizeof(int) * indices[i].size()
-        );
-
-        index_buffer_memories[i] = allocate_buffer_memory(
-            vk_device, physical_device,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            index_buffers[i]
-        );
-
-        write_buffer_staged(
-            vk_device, physical_device,
-            graphics_queue,
-            command_pool,
-            index_buffers[i],
-            indices[i].data(), sizeof(int) * indices[i].size()
         );
     }
 
@@ -259,22 +230,28 @@ int main() {
 
     // Create uniform buffers
     Material road_material = {};
-    road_material.m_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "asphalt.jpg");
+    road_material.m_color_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "asphalt.jpg");
+    Mesh road_mesh = {};
+    road_mesh.m_start_index = 0;
+    road_mesh.m_num_vertices = vertices[0].size();
+    road_mesh.m_material_index = 0;
     Model road_model = {};
-    road_model.m_material = road_material;
+    road_model.m_materials = { road_material };
     road_model.m_vertex_buffer = vertex_buffers[0];
     road_model.m_vertex_buffer_memory = vertex_buffer_memories[0];
-    road_model.m_index_buffer = index_buffers[0];
-    road_model.m_index_buffer_memory = index_buffer_memories[0];
+    road_model.m_meshes = { road_mesh };
 
     Material explosion_material = {};
-    explosion_material.m_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "explosion.png");
+    explosion_material.m_color_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "explosion.png");
+    Mesh explosion_mesh = {};
+    explosion_mesh.m_start_index = 0;
+    explosion_mesh.m_num_vertices = vertices[1].size();
+    explosion_mesh.m_material_index = 0;
     Model explosion_model = {};
-    explosion_model.m_material = explosion_material;
+    explosion_model.m_materials = { explosion_material };
     explosion_model.m_vertex_buffer = vertex_buffers[1];
     explosion_model.m_vertex_buffer_memory = vertex_buffer_memories[1];
-    explosion_model.m_index_buffer = index_buffers[1];
-    explosion_model.m_index_buffer_memory = index_buffer_memories[1];
+    explosion_model.m_meshes = { explosion_mesh };
 
     Object road = {};
     road.m_model_index = 0;
@@ -360,21 +337,22 @@ int main() {
 
         VkDeviceSize offsets[] = { 0 };
 
-        for(Object& object : objects) {
-            Model& model = models[object.m_model_index];
-            vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.m_vertex_buffer, offsets);
-            vkCmdBindIndexBuffer(command_buffer, model.m_index_buffer, offsets[0], VK_INDEX_TYPE_UINT32);
-            
-            vkCmdBindDescriptorSets(
-                command_buffer,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                pipeline_layout,
-                0, 1,
-                &frame_data[current_frame].m_descriptor_sets[object.m_model_index],
-                0, nullptr
-            );
+        for(const Object& object : objects) {
+            const Model& model = models[object.m_model_index];
+            for(const Mesh& mesh : model.m_meshes) {
+                vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.m_vertex_buffer, offsets);
+                
+                vkCmdBindDescriptorSets(
+                    command_buffer,
+                    VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    pipeline_layout,
+                    0, 1,
+                    &frame_data[current_frame].m_descriptor_sets[object.m_model_index],
+                    0, nullptr
+                );
 
-            vkCmdDrawIndexed(command_buffer, indices[object.m_model_index].size(), 1, 0, 0, 0);
+                vkCmdDraw(command_buffer, vertices[object.m_model_index].size(), 1, 0, 0);
+            }
         }
 
         imgui_new_frame();

@@ -30,23 +30,38 @@ Texture load_texture_from_image(
 );
 
 struct Material {
-    Texture m_texture;
+    void destroy(VkDevice device);
+
+    std::string m_name;
+    glm::vec3 m_color;
+    float m_metalic;
+    float m_fresnel;
+    float m_roughness;
+    glm::vec3 m_emission;
+    float m_transparency;
+    float m_ior;
+    std::optional<Texture> m_color_texture;
+    std::optional<Texture> m_metalic_texture;
+    std::optional<Texture> m_fresnel_texture;
+    std::optional<Texture> m_roughness_texture;
+    std::optional<Texture> m_emission_texture;
 };
 
 struct Mesh {
+    std::string m_name;
     size_t m_material_index;
-    size_t m_vertex_offset;
+    size_t m_start_index;
     size_t m_num_vertices;
 };
 
 struct Model {
     void destroy(VkDevice device);
 
-    Material m_material;
+    std::string m_name;
+    std::vector<Material> m_materials;
     VkBuffer m_vertex_buffer;
     VkDeviceMemory m_vertex_buffer_memory;
-    VkBuffer m_index_buffer;
-    VkDeviceMemory m_index_buffer_memory;
+    std::vector<Mesh> m_meshes;
 };
 
 struct Object {
