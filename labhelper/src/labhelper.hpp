@@ -7,9 +7,79 @@
 #include <vulkan/vulkan_core.h>
 #include <stb_image.h>
 
+#include <glm/glm.hpp>
+
 #define VK_HANDLE_ERROR(X, msg) if(X != VK_SUCCESS) { throw std::runtime_error(msg); }
 
 const uint32_t MAX_FRAMES_IN_FLIGHT = 2;
+
+struct Texture {
+    void destroy(VkDevice device);
+
+    VkImage m_image;
+    VkImageView m_image_view;
+    VkDeviceMemory m_image_memory;
+    int m_width, m_height, m_channels;
+};
+
+Texture load_texture_from_image(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    const char* file_name
+);
+
+struct Material {
+    Texture m_texture;
+};
+
+struct Mesh {
+    size_t m_material_index;
+    size_t m_vertex_offset;
+    size_t m_num_vertices;
+};
+
+struct Model {
+    void destroy(VkDevice device);
+
+    Material m_material;
+    VkBuffer m_vertex_buffer;
+    VkDeviceMemory m_vertex_buffer_memory;
+    VkBuffer m_index_buffer;
+    VkDeviceMemory m_index_buffer_memory;
+};
+
+struct Object {
+    size_t m_model_index;
+    glm::vec3 position;
+};
+
+struct FrameData {
+    VkDescriptorPool m_descriptor_pool;
+    std::vector<VkBuffer> m_uniform_buffers;
+    std::vector<VkDeviceMemory> m_uniform_memory;
+    std::vector<VkDescriptorSet> m_descriptor_sets;
+    size_t m_max_objects;
+};
+
+FrameData create_frame_data(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkDescriptorSetLayout descriptor_set_layout,
+    const size_t max_objects
+);
+
+void update_frame_data(
+    VkDevice device,
+    FrameData* frame_data,
+    VkSampler sampler,
+    const std::vector<Object>& objects,
+    const std::vector<Model>& models,
+    glm::mat4 view_projection_matrix
+);
+
+void destroy_frame_data(
+    VkDevice device,
+    FrameData& frame_data
+);
 
 struct SurfaceInfo {
     VkSurfaceFormatKHR format;

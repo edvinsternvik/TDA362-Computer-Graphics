@@ -10,6 +10,8 @@
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_vulkan.h>
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #ifdef NDEBUG
 const std::array<const char*, 0> VALIDATION_LAYERS = { };
 #else
@@ -21,6 +23,182 @@ const std::array<const char*, 1> VALIDATION_LAYERS = {
 const std::array<const char*, 1> DEVICE_EXTENSIONS = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
+
+Texture load_texture_from_image(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    const char* file_name
+) {
+    Texture texture = {};
+    load_image(
+        device, physical_device,
+        command_pool,
+        command_queue,
+        &texture.m_image, &texture.m_image_memory,
+        file_name,
+        &texture.m_width, &texture.m_height, &texture.m_channels, 4,
+        VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+    );
+
+    {
+        VkImageViewCreateInfo create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        create_info.image = texture.m_image;
+        create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        create_info.subresourceRange.baseMipLevel = 0;
+        create_info.subresourceRange.levelCount = 1;
+        create_info.subresourceRange.baseArrayLayer = 0;
+        create_info.subresourceRange.layerCount = 1;
+        vkCreateImageView(device, &create_info, nullptr, &texture.m_image_view);
+    }
+
+    return texture;
+}
+
+void Texture::destroy(VkDevice device) {
+    vkDestroyImage(device, m_image, nullptr);
+    vkDestroyImageView(device, m_image_view, nullptr);
+    vkFreeMemory(device, m_image_memory, nullptr);
+}
+
+void Model::destroy(VkDevice device) {
+    m_material.m_texture.destroy(device);
+    vkDestroyBuffer(device, m_vertex_buffer, nullptr);
+    vkFreeMemory(device, m_vertex_buffer_memory, nullptr);
+    vkDestroyBuffer(device, m_index_buffer, nullptr);
+    vkFreeMemory(device, m_index_buffer_memory, nullptr);
+}
+
+FrameData create_frame_data(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkDescriptorSetLayout descriptor_set_layout,
+    const size_t max_objects
+) {
+    FrameData frame_data;
+    frame_data.m_max_objects = max_objects;
+    frame_data.m_uniform_buffers = std::vector<VkBuffer>(max_objects);
+    frame_data.m_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
+    frame_data.m_descriptor_sets = std::vector<VkDescriptorSet>(max_objects);
+
+    std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes = {};
+    descriptor_pool_sizes[0].descriptorCount = max_objects;
+    descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_pool_sizes[1].descriptorCount = max_objects;
+    descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
+    descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptor_pool_create_info.maxSets = max_objects;
+    descriptor_pool_create_info.poolSizeCount = descriptor_pool_sizes.size();
+    descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
+    vkCreateDescriptorPool(device, &descriptor_pool_create_info, nullptr, &frame_data.m_descriptor_pool);
+
+    for(size_t i = 0; i < max_objects; ++i) {
+        frame_data.m_uniform_buffers[i] = create_buffer(
+            device,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            sizeof(glm::mat4)
+        );
+
+        frame_data.m_uniform_memory[i] = allocate_buffer_memory(
+            device, physical_device,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            frame_data.m_uniform_buffers[i]
+        );
+    }
+
+    std::vector<VkDescriptorSetLayout> descriptor_set_layouts(max_objects, descriptor_set_layout);
+    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
+    descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptor_set_allocate_info.descriptorPool = frame_data.m_descriptor_pool;
+    descriptor_set_allocate_info.descriptorSetCount = max_objects;
+    descriptor_set_allocate_info.pSetLayouts = descriptor_set_layouts.data();
+    vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, frame_data.m_descriptor_sets.data());
+
+    return frame_data;
+}
+
+void update_frame_data(
+    VkDevice device,
+    FrameData* frame_data,
+    VkSampler sampler,
+    const std::vector<Object>& objects,
+    const std::vector<Model>& models,
+    glm::mat4 view_projection_matrix
+) {
+
+    for(size_t i = 0; i < frame_data->m_max_objects; ++i) {
+        const Model& model = models[objects[i].m_model_index];
+        VkImageView image_view = model.m_material.m_texture.m_image_view;
+
+        glm::mat4 mvp = glm::translate(glm::identity<glm::mat4>(), objects[i].position);
+        mvp = view_projection_matrix * mvp;
+        mvp[1][1] *= -1.0;
+
+        VkDescriptorBufferInfo descriptor_buffer_info = {};
+        descriptor_buffer_info.buffer = frame_data->m_uniform_buffers[i];
+        descriptor_buffer_info.range = sizeof(glm::mat4);
+        descriptor_buffer_info.offset = 0;
+
+        VkDescriptorImageInfo descriptor_image_info = {};
+        descriptor_image_info.sampler = sampler;
+        descriptor_image_info.imageView = image_view;
+        descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        std::array<VkWriteDescriptorSet, 2> descriptor_set_writes = {};
+        descriptor_set_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_set_writes[0].descriptorCount = 1;
+        descriptor_set_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor_set_writes[0].dstSet = frame_data->m_descriptor_sets[i];
+        descriptor_set_writes[0].dstBinding = 0;
+        descriptor_set_writes[0].dstArrayElement = 0;
+        descriptor_set_writes[0].pBufferInfo = &descriptor_buffer_info;
+        descriptor_set_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_set_writes[1].descriptorCount = 1;
+        descriptor_set_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor_set_writes[1].dstSet = frame_data->m_descriptor_sets[i];
+        descriptor_set_writes[1].dstBinding = 1;
+        descriptor_set_writes[1].dstArrayElement = 0;
+        descriptor_set_writes[1].pImageInfo = &descriptor_image_info;
+        vkUpdateDescriptorSets(
+            device,
+            descriptor_set_writes.size(),
+            descriptor_set_writes.data(),
+            0, nullptr
+        );
+
+        glm::mat4* mvp_mapping;
+        vkMapMemory(
+            device,
+            frame_data->m_uniform_memory[i],
+            0,
+            sizeof(glm::mat4),
+            0,
+            (void**)&mvp_mapping
+        );
+
+        *(glm::mat4*)(mvp_mapping) = mvp;
+
+        vkUnmapMemory(device, frame_data->m_uniform_memory[i]);
+    }
+}
+
+void destroy_frame_data(
+    VkDevice device,
+    FrameData& frame_data
+) {
+    vkDestroyDescriptorPool(device, frame_data.m_descriptor_pool, nullptr);
+    for(auto ub : frame_data.m_uniform_buffers) {
+        vkDestroyBuffer(device, ub, nullptr);
+    }
+    for(auto um : frame_data.m_uniform_memory) {
+        vkFreeMemory(device, um, nullptr);
+    }
+}
 
 void init_vulkan(
     SDL_Window* window,

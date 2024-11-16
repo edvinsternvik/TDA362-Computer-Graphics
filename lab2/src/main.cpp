@@ -234,69 +234,6 @@ int main() {
         );
     }
 
-    // Create texture
-    VkImage road_texture;
-    VkDeviceMemory road_texture_memory;
-    int road_texture_width, road_texture_height, road_texture_channels;
-    load_image(
-        vk_device, physical_device,
-        command_pool,
-        graphics_queue,
-        &road_texture, &road_texture_memory,
-        "asphalt.jpg",
-        &road_texture_width, &road_texture_height, &road_texture_channels, 4,
-        VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_FORMAT_R8G8B8A8_SRGB,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-    );
-
-    VkImageView roadtexture_view;
-    {
-        VkImageViewCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        create_info.image = road_texture;
-        create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        create_info.subresourceRange.baseMipLevel = 0;
-        create_info.subresourceRange.levelCount = 1;
-        create_info.subresourceRange.baseArrayLayer = 0;
-        create_info.subresourceRange.layerCount = 1;
-        vkCreateImageView(vk_device, &create_info, nullptr, &roadtexture_view);
-    }
-
-    VkImage explosion_texture;
-    VkDeviceMemory explosion_texture_memory;
-    int explosion_texture_width, explosion_texture_height, explosion_texture_channels;
-    load_image(
-        vk_device, physical_device,
-        command_pool,
-        graphics_queue,
-        &explosion_texture, &explosion_texture_memory,
-        "explosion.png",
-        &explosion_texture_width, &explosion_texture_height, &explosion_texture_channels, 4,
-        VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_FORMAT_R8G8B8A8_SRGB,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
-    );
-
-    VkImageView explosion_texture_view;
-    {
-        VkImageViewCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        create_info.image = explosion_texture;
-        create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        create_info.subresourceRange.baseMipLevel = 0;
-        create_info.subresourceRange.levelCount = 1;
-        create_info.subresourceRange.baseArrayLayer = 0;
-        create_info.subresourceRange.layerCount = 1;
-        vkCreateImageView(vk_device, &create_info, nullptr, &explosion_texture_view);
-    }
-
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties(physical_device, &device_properties);
 
@@ -321,98 +258,46 @@ int main() {
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
     // Create uniform buffers
-    const size_t NUM_OBJECTS = 2;
+    Material road_material = {};
+    road_material.m_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "asphalt.jpg");
+    Model road_model = {};
+    road_model.m_material = road_material;
+    road_model.m_vertex_buffer = vertex_buffers[0];
+    road_model.m_vertex_buffer_memory = vertex_buffer_memories[0];
+    road_model.m_index_buffer = index_buffers[0];
+    road_model.m_index_buffer_memory = index_buffer_memories[0];
 
-    glm::mat4 mvp = glm::translate(glm::identity<glm::mat4>(), glm::vec3(0.0, 10.0, 0.0));
-    mvp = (glm::mat4)glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0) * mvp;
-    mvp[1][1] *= -1.0;
-    std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS> uniform_buffers;
-    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS> uniform_memory;
-    std::array<void*, MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS> uniform_buffer_mapping;
+    Material explosion_material = {};
+    explosion_material.m_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "explosion.png");
+    Model explosion_model = {};
+    explosion_model.m_material = explosion_material;
+    explosion_model.m_vertex_buffer = vertex_buffers[1];
+    explosion_model.m_vertex_buffer_memory = vertex_buffer_memories[1];
+    explosion_model.m_index_buffer = index_buffers[1];
+    explosion_model.m_index_buffer_memory = index_buffer_memories[1];
 
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS; ++i) {
-        uniform_buffers[i] = create_buffer(
-            vk_device,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            sizeof(mvp)
-        );
+    Object road = {};
+    road.m_model_index = 0;
+    road.position = glm::vec3(0.0, 10.0, 0.0);
 
-        uniform_memory[i] = allocate_buffer_memory(
-            vk_device, physical_device,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            uniform_buffers[i]
-        );
+    Object explosion = {};
+    explosion.m_model_index = 1;
+    explosion.position = glm::vec3(0.5, 0.5, -4.0);
 
-        vkMapMemory(
-            vk_device,
-            uniform_memory[i],
-            0,
-            sizeof(mvp),
-            0,
-            &uniform_buffer_mapping[i]
-        );
+    std::vector<Object> objects = {
+        road, explosion
+    };
 
-        *(glm::mat4*)uniform_buffer_mapping[i] = mvp;
-    }
+    std::vector<Model> models = {
+        road_model, explosion_model
+    };
 
-    // Create descriptor pool
-    VkDescriptorPool descriptor_pool;
-    std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes = {};
-    descriptor_pool_sizes[0].descriptorCount = MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS;
-    descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptor_pool_sizes[1].descriptorCount = MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS;
-    descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
-    descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    descriptor_pool_create_info.maxSets = MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS;
-    descriptor_pool_create_info.poolSizeCount = descriptor_pool_sizes.size();
-    descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
-    vkCreateDescriptorPool(vk_device, &descriptor_pool_create_info, nullptr, &descriptor_pool);
+    glm::mat4 view_projection_matrix = glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0);
 
-    // Create descriptor sets
-    std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS> descriptor_sets;
-    std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS> descriptor_set_layouts;
-    descriptor_set_layouts.fill(descriptor_set_layout);
-    VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
-    descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    descriptor_set_allocate_info.descriptorPool = descriptor_pool;
-    descriptor_set_allocate_info.descriptorSetCount = MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS;
-    descriptor_set_allocate_info.pSetLayouts = descriptor_set_layouts.data();
-    vkAllocateDescriptorSets(vk_device, &descriptor_set_allocate_info, descriptor_sets.data());
-
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT * NUM_OBJECTS; ++i) {
-        VkDescriptorBufferInfo descriptor_buffer_info = {};
-        descriptor_buffer_info.buffer = uniform_buffers[i];
-        descriptor_buffer_info.range = sizeof(mvp);
-        descriptor_buffer_info.offset = 0;
-
-        VkDescriptorImageInfo descriptor_image_info = {};
-        descriptor_image_info.sampler = sampler;
-        if(i % NUM_OBJECTS == 0) descriptor_image_info.imageView = roadtexture_view;
-        if(i % NUM_OBJECTS == 1) descriptor_image_info.imageView = explosion_texture_view;
-        descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        std::array<VkWriteDescriptorSet, 2> descriptor_set_writes = {};
-        descriptor_set_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_set_writes[0].descriptorCount = 1;
-        descriptor_set_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptor_set_writes[0].dstSet = descriptor_sets[i];
-        descriptor_set_writes[0].dstBinding = 0;
-        descriptor_set_writes[0].dstArrayElement = 0;
-        descriptor_set_writes[0].pBufferInfo = &descriptor_buffer_info;
-        descriptor_set_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptor_set_writes[1].descriptorCount = 1;
-        descriptor_set_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptor_set_writes[1].dstSet = descriptor_sets[i];
-        descriptor_set_writes[1].dstBinding = 1;
-        descriptor_set_writes[1].dstArrayElement = 0;
-        descriptor_set_writes[1].pImageInfo = &descriptor_image_info;
-        vkUpdateDescriptorSets(
-            vk_device,
-            descriptor_set_writes.size(),
-            descriptor_set_writes.data(),
-            0, nullptr
-        );
+    std::array<FrameData, MAX_FRAMES_IN_FLIGHT> frame_data;
+    for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        frame_data[i] = create_frame_data(vk_device, physical_device, descriptor_set_layout, 2);
+        update_frame_data(vk_device, &frame_data[i], sampler, objects, models, view_projection_matrix);
     }
 
     // Allocate command buffer
@@ -430,12 +315,6 @@ int main() {
 
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
-    glm::mat4 test1 = glm::translate(glm::identity<glm::mat4>(), glm::vec3(0.0, 10.0, 0.0));
-    test1 = (glm::mat4)glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0) * test1;
-    test1[1][1] *= -1.0;
-    glm::mat4 test2 = glm::translate(glm::identity<glm::mat4>(), glm::vec3(0.5, 0.5, -4.0));
-    test2 = (glm::mat4)glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0) * test2;
-    test2[1][1] *= -1.0;
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -474,34 +353,23 @@ int main() {
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
 
         VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers[0], offsets);
-        vkCmdBindIndexBuffer(command_buffer, index_buffers[0], offsets[0], VK_INDEX_TYPE_UINT32);
 
-        *((glm::mat4*)uniform_buffer_mapping[current_frame * NUM_OBJECTS + 0]) = test1;
-        
-        vkCmdBindDescriptorSets(
-            command_buffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipeline_layout,
-            0, 1,
-            &descriptor_sets[current_frame * NUM_OBJECTS + 0],
-            0, nullptr
-        );
+        for(Object& object : objects) {
+            Model& model = models[object.m_model_index];
+            vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.m_vertex_buffer, offsets);
+            vkCmdBindIndexBuffer(command_buffer, model.m_index_buffer, offsets[0], VK_INDEX_TYPE_UINT32);
+            
+            vkCmdBindDescriptorSets(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline_layout,
+                0, 1,
+                &frame_data[current_frame].m_descriptor_sets[object.m_model_index],
+                0, nullptr
+            );
 
-        vkCmdDrawIndexed(command_buffer, indices[0].size(), 1, 0, 0, 0);
-
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers[1], offsets);
-        vkCmdBindIndexBuffer(command_buffer, index_buffers[1], offsets[0], VK_INDEX_TYPE_UINT32);
-        *((glm::mat4*)uniform_buffer_mapping[current_frame * NUM_OBJECTS + 1]) = test2;
-        vkCmdBindDescriptorSets(
-            command_buffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            pipeline_layout,
-            0, 1,
-            &descriptor_sets[current_frame * NUM_OBJECTS + 1],
-            0, nullptr
-        );
-        vkCmdDrawIndexed(command_buffer, indices[1].size(), 1, 0, 0, 0);
+            vkCmdDrawIndexed(command_buffer, indices[object.m_model_index].size(), 1, 0, 0, 0);
+        }
 
         imgui_new_frame();
         ImGui::ColorEdit4("clear colour", (float*)&clear_color);
@@ -639,20 +507,9 @@ int main() {
 
     // Clean up
     imgui_cleanup(vk_device, imgui_descriptor_pool);
-    for(auto b : uniform_buffers) vkDestroyBuffer(vk_device, b, nullptr);
-    for(auto m : uniform_memory) vkFreeMemory(vk_device, m, nullptr);
-    vkDestroyDescriptorPool(vk_device, descriptor_pool, nullptr);
+    for(auto& fd : frame_data) destroy_frame_data(vk_device, fd);
+    for(auto& model : models) model.destroy(vk_device);
     vkDestroyDescriptorSetLayout(vk_device, descriptor_set_layout, nullptr);
-    for(auto vb : index_buffers) vkDestroyBuffer(vk_device, vb, nullptr);
-    for(auto im : index_buffer_memories) vkFreeMemory(vk_device, im, nullptr);
-    for(auto vb : vertex_buffers) vkDestroyBuffer(vk_device, vb, nullptr);
-    for(auto vm : vertex_buffer_memories) vkFreeMemory(vk_device, vm, nullptr);
-    vkDestroyImage(vk_device, explosion_texture, nullptr);
-    vkFreeMemory(vk_device, explosion_texture_memory, nullptr);
-    vkDestroyImageView(vk_device, explosion_texture_view, nullptr);
-    vkDestroyImage(vk_device, road_texture, nullptr);
-    vkFreeMemory(vk_device, road_texture_memory, nullptr);
-    vkDestroyImageView(vk_device, roadtexture_view, nullptr);
     vkDestroySampler(vk_device, sampler, nullptr);
     for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);
     for(auto s : render_finished) vkDestroySemaphore(vk_device, s, nullptr);
