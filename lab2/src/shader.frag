@@ -8,5 +8,5 @@ layout(binding = 1) uniform sampler2D texture_sampler;
 layout(location = 0) out vec4 out_color;
 
 void main() {
-    out_color = vec4(texture(texture_sampler, in_texture_coords).rgb, 1.0);
+    out_color = texture(texture_sampler, in_texture_coords);
 }

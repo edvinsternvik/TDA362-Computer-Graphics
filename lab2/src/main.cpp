@@ -158,7 +158,7 @@ int main() {
     );
 
     // Create vertex buffer
-    std::vector<float> vertices[1];
+    std::vector<float> vertices[2];
     vertices[0] = {
     //     X     Y        Z     U     V
         -10.0f, 0.0f,  -10.0f, 0.0f, 0.0f,
@@ -167,10 +167,17 @@ int main() {
          10.0f, 0.0f,  -10.0f, 1.0f, 0.0f
     };
 
-    std::array<VkBuffer, 1> vertex_buffers;
-    std::array<VkDeviceMemory, 1> vertex_buffer_memories;
+    vertices[1] = {
+        -0.5, -0.5, 0.0, 0.0, 0.0,
+         0.5, -0.5, 0.0, 1.0, 0.0,
+         0.5,  0.5, 0.0, 1.0, 1.0,
+        -0.5,  0.5, 0.0, 0.0, 1.0
+    };
 
-    for(int i = 0; i < 1; ++i) {
+    std::array<VkBuffer, 2> vertex_buffers;
+    std::array<VkDeviceMemory, 2> vertex_buffer_memories;
+
+    for(int i = 0; i < 2; ++i) {
         vertex_buffers[i] = create_buffer(
             vk_device,
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -193,15 +200,19 @@ int main() {
     }
 
     // Create index buffer
-    std::vector<int> indices[1];
+    std::vector<int> indices[2];
     indices[0] = {
         0, 1, 3,
         1, 2, 3
     };
+    indices[1] = {
+        2, 1, 0,
+        0, 3, 2
+    };
 
-    std::array<VkBuffer, 1> index_buffers;
-    std::array<VkDeviceMemory, 1> index_buffer_memories;
-    for(int i = 0; i < 1; ++i) {
+    std::array<VkBuffer, 2> index_buffers;
+    std::array<VkDeviceMemory, 2> index_buffer_memories;
+    for(int i = 0; i < 2; ++i) {
         index_buffers[i] = create_buffer(
             vk_device,
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -224,34 +235,67 @@ int main() {
     }
 
     // Create texture
-    VkImage texture;
-    VkDeviceMemory texture_memory;
-    int texture_width, texture_height, texture_channels;
+    VkImage road_texture;
+    VkDeviceMemory road_texture_memory;
+    int road_texture_width, road_texture_height, road_texture_channels;
     load_image(
         vk_device, physical_device,
         command_pool,
         graphics_queue,
-        &texture, &texture_memory,
+        &road_texture, &road_texture_memory,
         "asphalt.jpg",
-        &texture_width, &texture_height, &texture_channels, 4,
+        &road_texture_width, &road_texture_height, &road_texture_channels, 4,
         VK_IMAGE_USAGE_SAMPLED_BIT,
         VK_FORMAT_R8G8B8A8_SRGB,
         VK_IMAGE_TILING_OPTIMAL,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
 
-    VkImageView texture_view;
-    VkImageViewCreateInfo view_create_info = {};
-    view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_create_info.image = texture;
-    view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-    view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    view_create_info.subresourceRange.baseMipLevel = 0;
-    view_create_info.subresourceRange.levelCount = 1;
-    view_create_info.subresourceRange.baseArrayLayer = 0;
-    view_create_info.subresourceRange.layerCount = 1;
-    vkCreateImageView(vk_device, &view_create_info, nullptr, &texture_view);
+    VkImageView roadtexture_view;
+    {
+        VkImageViewCreateInfo create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        create_info.image = road_texture;
+        create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        create_info.subresourceRange.baseMipLevel = 0;
+        create_info.subresourceRange.levelCount = 1;
+        create_info.subresourceRange.baseArrayLayer = 0;
+        create_info.subresourceRange.layerCount = 1;
+        vkCreateImageView(vk_device, &create_info, nullptr, &roadtexture_view);
+    }
+
+    VkImage explosion_texture;
+    VkDeviceMemory explosion_texture_memory;
+    int explosion_texture_width, explosion_texture_height, explosion_texture_channels;
+    load_image(
+        vk_device, physical_device,
+        command_pool,
+        graphics_queue,
+        &explosion_texture, &explosion_texture_memory,
+        "explosion.png",
+        &explosion_texture_width, &explosion_texture_height, &explosion_texture_channels, 4,
+        VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+    );
+
+    VkImageView explosion_texture_view;
+    {
+        VkImageViewCreateInfo create_info = {};
+        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        create_info.image = explosion_texture;
+        create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        create_info.subresourceRange.baseMipLevel = 0;
+        create_info.subresourceRange.levelCount = 1;
+        create_info.subresourceRange.baseArrayLayer = 0;
+        create_info.subresourceRange.layerCount = 1;
+        vkCreateImageView(vk_device, &create_info, nullptr, &explosion_texture_view);
+    }
 
     VkPhysicalDeviceProperties device_properties;
     vkGetPhysicalDeviceProperties(physical_device, &device_properties);
@@ -277,7 +321,7 @@ int main() {
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
     // Create uniform buffers
-    const size_t NUM_OBJECTS = 1;
+    const size_t NUM_OBJECTS = 2;
 
     glm::mat4 mvp = glm::translate(glm::identity<glm::mat4>(), glm::vec3(0.0, 10.0, 0.0));
     mvp = (glm::mat4)glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0) * mvp;
@@ -344,7 +388,8 @@ int main() {
 
         VkDescriptorImageInfo descriptor_image_info = {};
         descriptor_image_info.sampler = sampler;
-        descriptor_image_info.imageView = texture_view;
+        if(i % NUM_OBJECTS == 0) descriptor_image_info.imageView = roadtexture_view;
+        if(i % NUM_OBJECTS == 1) descriptor_image_info.imageView = explosion_texture_view;
         descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
         std::array<VkWriteDescriptorSet, 2> descriptor_set_writes = {};
@@ -385,6 +430,12 @@ int main() {
 
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
+    glm::mat4 test1 = glm::translate(glm::identity<glm::mat4>(), glm::vec3(0.0, 10.0, 0.0));
+    test1 = (glm::mat4)glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0) * test1;
+    test1[1][1] *= -1.0;
+    glm::mat4 test2 = glm::translate(glm::identity<glm::mat4>(), glm::vec3(0.5, 0.5, -4.0));
+    test2 = (glm::mat4)glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0) * test2;
+    test2[1][1] *= -1.0;
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -426,6 +477,8 @@ int main() {
         vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers[0], offsets);
         vkCmdBindIndexBuffer(command_buffer, index_buffers[0], offsets[0], VK_INDEX_TYPE_UINT32);
 
+        *((glm::mat4*)uniform_buffer_mapping[current_frame * NUM_OBJECTS + 0]) = test1;
+        
         vkCmdBindDescriptorSets(
             command_buffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -436,6 +489,19 @@ int main() {
         );
 
         vkCmdDrawIndexed(command_buffer, indices[0].size(), 1, 0, 0, 0);
+
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &vertex_buffers[1], offsets);
+        vkCmdBindIndexBuffer(command_buffer, index_buffers[1], offsets[0], VK_INDEX_TYPE_UINT32);
+        *((glm::mat4*)uniform_buffer_mapping[current_frame * NUM_OBJECTS + 1]) = test2;
+        vkCmdBindDescriptorSets(
+            command_buffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipeline_layout,
+            0, 1,
+            &descriptor_sets[current_frame * NUM_OBJECTS + 1],
+            0, nullptr
+        );
+        vkCmdDrawIndexed(command_buffer, indices[1].size(), 1, 0, 0, 0);
 
         imgui_new_frame();
         ImGui::ColorEdit4("clear colour", (float*)&clear_color);
@@ -581,9 +647,12 @@ int main() {
     for(auto im : index_buffer_memories) vkFreeMemory(vk_device, im, nullptr);
     for(auto vb : vertex_buffers) vkDestroyBuffer(vk_device, vb, nullptr);
     for(auto vm : vertex_buffer_memories) vkFreeMemory(vk_device, vm, nullptr);
-    vkDestroyImage(vk_device, texture, nullptr);
-    vkFreeMemory(vk_device, texture_memory, nullptr);
-    vkDestroyImageView(vk_device, texture_view, nullptr);
+    vkDestroyImage(vk_device, explosion_texture, nullptr);
+    vkFreeMemory(vk_device, explosion_texture_memory, nullptr);
+    vkDestroyImageView(vk_device, explosion_texture_view, nullptr);
+    vkDestroyImage(vk_device, road_texture, nullptr);
+    vkFreeMemory(vk_device, road_texture_memory, nullptr);
+    vkDestroyImageView(vk_device, roadtexture_view, nullptr);
     vkDestroySampler(vk_device, sampler, nullptr);
     for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);
     for(auto s : render_finished) vkDestroySemaphore(vk_device, s, nullptr);
