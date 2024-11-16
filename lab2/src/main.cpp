@@ -241,7 +241,7 @@ int main() {
     VkSamplerCreateInfo sampler_create_info = {};
     sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     sampler_create_info.minLod = 0.0f;
-    sampler_create_info.maxLod = 0.0f;
+    sampler_create_info.maxLod = VK_LOD_CLAMP_NONE;
     sampler_create_info.compareEnable = VK_FALSE;
     sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
     sampler_create_info.minFilter = VK_FILTER_LINEAR;

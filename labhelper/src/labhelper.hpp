@@ -20,6 +20,7 @@ struct Texture {
     VkImageView m_image_view;
     VkDeviceMemory m_image_memory;
     int m_width, m_height, m_channels;
+    uint32_t m_mip_levels;
 };
 
 Texture load_texture_from_image(
@@ -129,6 +130,7 @@ void load_image(
     VkImage* image, VkDeviceMemory* memory,
     const char* file_name,
     int* width, int* height, int* channels,
+    uint32_t* mip_levels,
     int required_comp,
     VkImageUsageFlags usage,
     VkFormat format,
@@ -171,7 +173,8 @@ VkImage create_image(
     VkImageUsageFlags usage,
     VkFormat format,
     VkImageTiling tiling,
-    uint32_t width, uint32_t height
+    uint32_t width, uint32_t height,
+    uint32_t mip_levels
 );
 
 uint32_t get_suitable_memory_type_index(
@@ -219,7 +222,17 @@ void transition_image_layout(
     VkQueue command_queue,
     VkImage image,
     VkFormat format,
-    VkImageLayout old_layout, VkImageLayout new_layout
+    VkImageLayout old_layout, VkImageLayout new_layout,
+    uint32_t mip_levels
+);
+
+void generate_mipmaps(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    VkImage image,
+    uint32_t width, uint32_t height,
+    uint32_t mip_levels,
+    VkFormat format
 );
 
 void create_depth_buffer(
