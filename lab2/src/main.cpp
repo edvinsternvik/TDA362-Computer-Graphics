@@ -315,7 +315,13 @@ int main() {
 
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
+    VkFilter mag_filter = sampler_create_info.magFilter;
+    VkFilter min_filter = sampler_create_info.minFilter;
+    VkSamplerMipmapMode mipmap_mode = sampler_create_info.mipmapMode;
+    float anisotropy = sampler_create_info.maxAnisotropy;
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
+        update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, view_projection_matrix);
+
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         VK_HANDLE_ERROR(
@@ -373,6 +379,26 @@ int main() {
 
         imgui_new_frame();
         ImGui::ColorEdit4("clear colour", (float*)&clear_color);
+
+        ImGui::PushID("mag");
+        ImGui::Text("Mag filter");
+        ImGui::RadioButton("NEAREST", (int*)&mag_filter, VK_FILTER_NEAREST);
+        ImGui::RadioButton("LINEAR", (int*)&mag_filter, VK_FILTER_LINEAR);
+        ImGui::PopID();
+
+        ImGui::PushID("min");
+        ImGui::Text("Min filter");
+        ImGui::RadioButton("NEAREST", (int*)&min_filter, VK_FILTER_NEAREST);
+        ImGui::RadioButton("LINEAR", (int*)&min_filter, VK_FILTER_LINEAR);
+        ImGui::PopID();
+
+        ImGui::PushID("mipmap");
+        ImGui::Text("Mipmap mode");
+        ImGui::RadioButton("NEAREST", (int*)&mipmap_mode, VK_SAMPLER_MIPMAP_MODE_NEAREST);
+        ImGui::RadioButton("LINEAR", (int*)&mipmap_mode, VK_SAMPLER_MIPMAP_MODE_LINEAR);
+        ImGui::PopID();
+
+        ImGui::SliderFloat("Anisotropic filtering", &anisotropy, 1.0, device_properties.limits.maxSamplerAnisotropy, "Number of samples: %.0f");
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
@@ -380,6 +406,7 @@ int main() {
             vkEndCommandBuffer(command_buffer),
             "Could not end command buffer"
         );
+
     };
 
     // Create synchronization primitives
@@ -430,6 +457,22 @@ int main() {
             ImGui_ImplSDL2_ProcessEvent(&e);
             if(e.type == SDL_QUIT) quit = true;
             if(e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) framebuffer_resized = true;
+        }
+
+        bool sampler_changed =
+            mag_filter != sampler_create_info.magFilter
+            || min_filter != sampler_create_info.minFilter
+            || mipmap_mode != sampler_create_info.mipmapMode
+            || anisotropy != sampler_create_info.maxAnisotropy;
+        if(sampler_changed) {
+            vkDeviceWaitIdle(vk_device);
+            vkDestroySampler(vk_device, sampler, nullptr);
+
+            sampler_create_info.magFilter = mag_filter;
+            sampler_create_info.minFilter = min_filter;
+            sampler_create_info.mipmapMode = mipmap_mode;
+            sampler_create_info.maxAnisotropy = anisotropy;
+            vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
         }
 
         // Render frame
