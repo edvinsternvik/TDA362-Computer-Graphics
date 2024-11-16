@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15...3.30)
 
 project(lab2)
 
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_executable(lab2 src/main.cpp)
 
