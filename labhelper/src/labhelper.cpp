@@ -1,6 +1,7 @@
 #include "labhelper.hpp"
 #include <algorithm>
 #include <fstream>
+#include <glm/ext/matrix_transform.hpp>
 #include <stdexcept>
 #include <vulkan/vulkan_core.h>
 #include <set>
@@ -447,16 +448,18 @@ void update_frame_data(
     VkDevice device,
     FrameData* frame_data,
     VkSampler sampler,
-    const std::vector<Object>& objects,
+    const std::vector<Object*>& objects,
     const std::vector<Model>& models,
     glm::mat4 view_projection_matrix
 ) {
     size_t descriptor_index = 0;
     for(size_t i = 0; i < objects.size(); ++i) {
-        const Model& model = models[objects[i].m_model_index];
+        const Model& model = models[objects[i]->m_model_index];
 
-        glm::mat4 mvp = glm::translate(glm::identity<glm::mat4>(), objects[i].position);
-        mvp = view_projection_matrix * mvp;
+        glm::mat4 mvp = view_projection_matrix
+            * glm::translate(glm::identity<glm::mat4>(), objects[i]->position)
+            * glm::mat4_cast(objects[i]->orientation)
+            * glm::scale(glm::identity<glm::mat4>(), objects[i]->scale);
         mvp[1][1] *= -1.0;
 
         for(size_t j = 0; j < model.m_meshes.size(); ++j) {

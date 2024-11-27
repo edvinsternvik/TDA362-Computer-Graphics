@@ -8,6 +8,7 @@
 #include <stb_image.h>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #define VK_HANDLE_ERROR(X, msg) if(X != VK_SUCCESS) { throw std::runtime_error(msg); }
 
@@ -77,6 +78,8 @@ Model load_model_from_file(
 struct Object {
     size_t m_model_index;
     glm::vec3 position;
+    glm::quat orientation;
+    glm::vec3 scale;
 };
 
 struct FrameData {
@@ -103,7 +106,7 @@ void update_frame_data(
     VkDevice device,
     FrameData* frame_data,
     VkSampler sampler,
-    const std::vector<Object>& objects,
+    const std::vector<Object*>& objects,
     const std::vector<Model>& models,
     glm::mat4 view_projection_matrix
 );

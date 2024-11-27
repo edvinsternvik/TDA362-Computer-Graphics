@@ -1,6 +1,9 @@
 #include "labhelper.hpp"
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/quaternion_transform.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/trigonometric.hpp>
 #include <vulkan/vulkan_core.h>
@@ -204,26 +207,42 @@ int main() {
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
     // Load objects
-    Model car_model = load_model_from_file(vk_device, physical_device, command_pool, graphics_queue, "../scenes/city.obj");
+    Model car_model = load_model_from_file(vk_device, physical_device, command_pool, graphics_queue, "../scenes/car.obj");
     std::vector<Model> models = {
         car_model
     };
 
     Object car_object = {};
     car_object.position = glm::vec3(0.0, 0.0, -10.0);
+    car_object.orientation = glm::identity<glm::quat>();
+    car_object.scale = glm::one<glm::vec3>();
     car_object.m_model_index = 0;
 
-    std::vector<Object> objects = {
-        car_object
+    std::vector<Object*> objects = {
+        &car_object
     };
 
     // Create uniform buffers
-    glm::mat4 view_projection_matrix = glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0);
+    glm::mat4 view_matrix = glm::identity<glm::mat4>();
+    glm::mat4 projection_matrix = glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0);
 
     std::array<FrameData, MAX_FRAMES_IN_FLIGHT> frame_data;
     for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        frame_data[i] = create_frame_data(vk_device, physical_device, command_pool, graphics_queue, descriptor_set_layout, 100);
-        update_frame_data(vk_device, &frame_data[i], sampler, objects, models, view_projection_matrix);
+        frame_data[i] = create_frame_data(
+            vk_device, physical_device, command_pool,
+            graphics_queue,
+            descriptor_set_layout,
+            100
+        );
+
+        update_frame_data(
+            vk_device,
+            &frame_data[i],
+            sampler,
+            objects,
+            models,
+            projection_matrix * view_matrix
+        );
     }
 
     // Allocate command buffer
@@ -242,7 +261,9 @@ int main() {
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
-        update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, view_projection_matrix);
+        car_object.orientation = glm::rotate(car_object.orientation, 0.01f, glm::vec3(0.0, 1.0, 0.0));
+
+        update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, projection_matrix * view_matrix);
 
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -283,8 +304,8 @@ int main() {
         VkDeviceSize offsets[] = { 0 };
 
         size_t descriptor_index = 0;
-        for(const Object& object : objects) {
-            const Model& model = models[object.m_model_index];
+        for(const Object* object : objects) {
+            const Model& model = models[object->m_model_index];
             vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.m_vertex_buffer, offsets);
 
             for(const Mesh& mesh : model.m_meshes) {
