@@ -1,8 +1,10 @@
 #include "labhelper.hpp"
-#include <iostream>
+#include <algorithm>
 #include <fstream>
+#include <stdexcept>
 #include <vulkan/vulkan_core.h>
 #include <set>
+#include <filesystem>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -58,7 +60,10 @@ Texture load_texture_from_image(
         create_info.subresourceRange.levelCount = texture.m_mip_levels;
         create_info.subresourceRange.baseArrayLayer = 0;
         create_info.subresourceRange.layerCount = 1;
-        vkCreateImageView(device, &create_info, nullptr, &texture.m_image_view);
+        VK_HANDLE_ERROR(
+            vkCreateImageView(device, &create_info, nullptr, &texture.m_image_view),
+            "Could not create image view"
+        );
     }
 
     return texture;
@@ -83,6 +88,9 @@ Model load_model_from_file(
     VkCommandPool command_pool, VkQueue command_queue,
     const char* file_name
 ) {
+    std::filesystem::path file_path(file_name);
+    std::filesystem::path base_path = file_path.parent_path();
+
 	tinyobj::attrib_t attrib;
 	std::vector<tinyobj::shape_t> shapes;
 	std::vector<tinyobj::material_t> materials;
@@ -90,10 +98,10 @@ Model load_model_from_file(
 	// Expect '.mtl' file in the same directory and triangulate meshes
 	bool ret = tinyobj::LoadObj(
         &attrib, &shapes, &materials, &warn, &err,
-	    file_name
+	    file_path.c_str(), base_path.c_str()
     );
 	if(!err.empty() || !warn.empty()) {
-		std::cerr << warn << " " << err << std::endl;
+        throw std::runtime_error(warn + err);
 	}
 	if(!ret) {
 		exit(1);
@@ -101,52 +109,67 @@ Model load_model_from_file(
 	Model model = {};
 	model.m_name = std::string(file_name);
 
+    auto get_path = [&](const std::string& in_path) {
+		std::string out_path;
+		for(const char c : in_path) {
+			if(c == '\\') {
+				if(out_path.back() != '/') {
+					out_path += '/';
+				}
+			}
+			else {
+				out_path += c;
+			}
+		}
+		return base_path / out_path;
+    };
+
     // Materials
 	for(const auto& m : materials) {
 		Material material;
 		material.m_name = m.name;
-		material.m_color = glm::vec3(m.diffuse[0], m.diffuse[1], m.diffuse[2]);
+		material.m_data.m_color = glm::vec3(m.diffuse[0], m.diffuse[1], m.diffuse[2]);
 		if(m.diffuse_texname != "") {
             material.m_color_texture = load_texture_from_image(
                 device, physical_device,
                 command_pool, command_queue,
-                m.diffuse_texname.c_str()
+                get_path(m.diffuse_texname).c_str()
             );
 		}
-		material.m_metalic = m.metallic;
+		material.m_data.m_metalic = m.metallic;
 		if(m.metallic_texname != "") {
             material.m_metalic_texture = load_texture_from_image(
                 device, physical_device,
                 command_pool, command_queue,
-                m.metallic_texname.c_str()
+                get_path(m.metallic_texname).c_str()
             );
 		}
-		material.m_fresnel = m.specular[0];
+		material.m_data.m_fresnel = m.specular[0];
 		if(m.specular_texname != "") {
             material.m_fresnel_texture = load_texture_from_image(
                 device, physical_device,
                 command_pool, command_queue,
-                m.specular_texname.c_str()
+                get_path(m.specular_texname).c_str()
             );
 		}
-		material.m_roughness = m.roughness;
+		material.m_data.m_roughness = m.roughness;
 		if(m.roughness_texname != "") {
             material.m_roughness_texture = load_texture_from_image(
                 device, physical_device,
                 command_pool, command_queue,
-                m.roughness_texname.c_str()
+                get_path(m.roughness_texname).c_str()
             );
 		}
-		material.m_emission = glm::vec3(m.emission[0], m.emission[1], m.emission[2]);
+		material.m_data.m_emission = glm::vec3(m.emission[0], m.emission[1], m.emission[2]);
 		if(m.emissive_texname != "") {
             material.m_emission_texture = load_texture_from_image(
                 device, physical_device,
                 command_pool, command_queue,
-                m.emissive_texname.c_str()
+                get_path(m.emissive_texname).c_str()
             );
 		}
-		material.m_transparency = m.transmittance[0];
-		material.m_ior = m.ior;
+		material.m_data.m_transparency = m.transmittance[0];
+		material.m_data.m_ior = m.ior;
 		model.m_materials.push_back(material);
 	}
 
@@ -158,15 +181,13 @@ Model load_model_from_file(
     struct Vertex {
         float x, y, z;
         float nx, ny, nz;
-        float r, g, b;
         float u, v;
     };
 
     std::vector<Vertex> vertices(number_of_vertices, Vertex{});
 
     // Generate normals
-    size_t num_vertices = attrib.vertices.size() / 3;
-	std::vector<glm::vec4> auto_normals(num_vertices);
+	std::vector<glm::vec4> auto_normals(attrib.vertices.size() / 3);
 	for(const auto& shape : shapes) {
 		for(int face = 0; face < int(shape.mesh.indices.size()) / 3; face++) {
 			glm::vec3 v0 = glm::vec3(
@@ -306,20 +327,27 @@ void Model::destroy(VkDevice device) {
 
 FrameData create_frame_data(
     VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
     VkDescriptorSetLayout descriptor_set_layout,
     const size_t max_objects
 ) {
     FrameData frame_data;
     frame_data.m_max_objects = max_objects;
-    frame_data.m_uniform_buffers = std::vector<VkBuffer>(max_objects);
-    frame_data.m_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
+    frame_data.m_mvp_uniform_buffers = std::vector<VkBuffer>(max_objects);
+    frame_data.m_mvp_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
+    frame_data.m_material_uniform_buffers = std::vector<VkBuffer>(max_objects);
+    frame_data.m_material_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
     frame_data.m_descriptor_sets = std::vector<VkDescriptorSet>(max_objects);
 
-    std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes = {};
+    std::array<VkDescriptorPoolSize, 7> descriptor_pool_sizes = {};
     descriptor_pool_sizes[0].descriptorCount = max_objects;
     descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptor_pool_sizes[1].descriptorCount = max_objects;
-    descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    for(size_t i = 2; i < 7; ++i) {
+        descriptor_pool_sizes[i].descriptorCount = max_objects;
+        descriptor_pool_sizes[i].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    }
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptor_pool_create_info.maxSets = max_objects;
@@ -328,16 +356,28 @@ FrameData create_frame_data(
     vkCreateDescriptorPool(device, &descriptor_pool_create_info, nullptr, &frame_data.m_descriptor_pool);
 
     for(size_t i = 0; i < max_objects; ++i) {
-        frame_data.m_uniform_buffers[i] = create_buffer(
+        frame_data.m_mvp_uniform_buffers[i] = create_buffer(
             device,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             sizeof(glm::mat4)
         );
 
-        frame_data.m_uniform_memory[i] = allocate_buffer_memory(
+        frame_data.m_mvp_uniform_memory[i] = allocate_buffer_memory(
             device, physical_device,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            frame_data.m_uniform_buffers[i]
+            frame_data.m_mvp_uniform_buffers[i]
+        );
+
+        frame_data.m_material_uniform_buffers[i] = create_buffer(
+            device,
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            sizeof(FrameData)
+        );
+
+        frame_data.m_material_uniform_memory[i] = allocate_buffer_memory(
+            device, physical_device,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            frame_data.m_material_uniform_buffers[i]
         );
     }
 
@@ -348,6 +388,57 @@ FrameData create_frame_data(
     descriptor_set_allocate_info.descriptorSetCount = max_objects;
     descriptor_set_allocate_info.pSetLayouts = descriptor_set_layouts.data();
     vkAllocateDescriptorSets(device, &descriptor_set_allocate_info, frame_data.m_descriptor_sets.data());
+
+    // Create empty image
+    std::array<uint8_t, 4> empty_image_data = { 0, 0, 0, 0 };
+    frame_data.m_empty_image = create_image(
+        device,
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_TILING_OPTIMAL,
+        1, 1, 1
+    );
+    frame_data.m_empty_image_memory = allocate_image_memory(
+        device, physical_device,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        frame_data.m_empty_image
+    );
+    transition_image_layout(
+        device, command_pool, command_queue,
+        frame_data.m_empty_image,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1
+    );
+    write_image_staged(
+        device, physical_device, command_queue, command_pool,
+        frame_data.m_empty_image,
+        empty_image_data.data(), empty_image_data.size(),
+        1, 1
+    );
+    transition_image_layout(
+        device, command_pool, command_queue,
+        frame_data.m_empty_image,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        1
+    );
+
+    {
+        VkImageViewCreateInfo view_create_info = {};
+        view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_create_info.image = frame_data.m_empty_image;
+        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
+        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_create_info.subresourceRange.baseMipLevel = 0;
+        view_create_info.subresourceRange.levelCount = 1;
+        view_create_info.subresourceRange.baseArrayLayer = 0;
+        view_create_info.subresourceRange.layerCount = 1;
+        vkCreateImageView(device, &view_create_info, nullptr, &frame_data.m_empty_image_view);
+    }
 
     return frame_data;
 }
@@ -370,34 +461,64 @@ void update_frame_data(
 
         for(size_t j = 0; j < model.m_meshes.size(); ++j) {
             const Mesh& mesh = model.m_meshes[j];
+            const Material& material = model.m_materials[mesh.m_material_index];
 
-            VkImageView image_view = model.m_materials[mesh.m_material_index].m_color_texture->m_image_view;
+            VkImageView color_view = frame_data->m_empty_image_view;
+            if(material.m_color_texture.has_value()) color_view = material.m_color_texture->m_image_view;
+            VkImageView metallic_view = frame_data->m_empty_image_view;
+            if(material.m_metalic_texture.has_value()) metallic_view = material.m_metalic_texture->m_image_view;
+            VkImageView fresnel_view = frame_data->m_empty_image_view;
+            if(material.m_fresnel_texture.has_value()) fresnel_view = material.m_fresnel_texture->m_image_view;
+            VkImageView roughness_view = frame_data->m_empty_image_view;
+            if(material.m_roughness_texture.has_value()) roughness_view = material.m_roughness_texture->m_image_view;
+            VkImageView emission_view = frame_data->m_empty_image_view;
+            if(material.m_emission_texture.has_value()) emission_view = material.m_emission_texture->m_image_view;
 
-            VkDescriptorBufferInfo descriptor_buffer_info = {};
-            descriptor_buffer_info.buffer = frame_data->m_uniform_buffers[descriptor_index];
-            descriptor_buffer_info.range = sizeof(glm::mat4);
-            descriptor_buffer_info.offset = 0;
+            VkDescriptorBufferInfo descriptor_mvp_buffer_info = {};
+            descriptor_mvp_buffer_info.buffer = frame_data->m_mvp_uniform_buffers[descriptor_index];
+            descriptor_mvp_buffer_info.range = sizeof(glm::mat4);
+            descriptor_mvp_buffer_info.offset = 0;
 
-            VkDescriptorImageInfo descriptor_image_info = {};
-            descriptor_image_info.sampler = sampler;
-            descriptor_image_info.imageView = image_view;
-            descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            VkDescriptorBufferInfo descriptor_material_buffer_info = {};
+            descriptor_material_buffer_info.buffer = frame_data->m_material_uniform_buffers[descriptor_index];
+            descriptor_material_buffer_info.range = sizeof(MaterialData);
+            descriptor_material_buffer_info.offset = 0;
 
-            std::array<VkWriteDescriptorSet, 2> descriptor_set_writes = {};
+            std::array<VkDescriptorImageInfo, 5> descriptor_image_infos = {};
+            for(size_t i = 0; i < 5; ++i) {
+                descriptor_image_infos[i].sampler = sampler;
+                descriptor_image_infos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+            descriptor_image_infos[0].imageView = color_view;
+            descriptor_image_infos[1].imageView = metallic_view;
+            descriptor_image_infos[2].imageView = fresnel_view;
+            descriptor_image_infos[3].imageView = roughness_view;
+            descriptor_image_infos[4].imageView = emission_view;
+
+            std::array<VkWriteDescriptorSet, 7> descriptor_set_writes = {};
             descriptor_set_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_set_writes[0].descriptorCount = 1;
             descriptor_set_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             descriptor_set_writes[0].dstSet = frame_data->m_descriptor_sets[descriptor_index];
             descriptor_set_writes[0].dstBinding = 0;
             descriptor_set_writes[0].dstArrayElement = 0;
-            descriptor_set_writes[0].pBufferInfo = &descriptor_buffer_info;
+            descriptor_set_writes[0].pBufferInfo = &descriptor_mvp_buffer_info;
             descriptor_set_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_set_writes[1].descriptorCount = 1;
-            descriptor_set_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptor_set_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
             descriptor_set_writes[1].dstSet = frame_data->m_descriptor_sets[descriptor_index];
             descriptor_set_writes[1].dstBinding = 1;
             descriptor_set_writes[1].dstArrayElement = 0;
-            descriptor_set_writes[1].pImageInfo = &descriptor_image_info;
+            descriptor_set_writes[1].pBufferInfo = &descriptor_material_buffer_info;
+            for(size_t i = 0; i < 5; ++i) {
+                descriptor_set_writes[2 + i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                descriptor_set_writes[2 + i].descriptorCount = 1;
+                descriptor_set_writes[2 + i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                descriptor_set_writes[2 + i].dstSet = frame_data->m_descriptor_sets[descriptor_index];
+                descriptor_set_writes[2 + i].dstBinding = 2 + i;
+                descriptor_set_writes[2 + i].dstArrayElement = 0;
+                descriptor_set_writes[2 + i].pImageInfo = &descriptor_image_infos[i];
+            }
             vkUpdateDescriptorSets(
                 device,
                 descriptor_set_writes.size(),
@@ -408,7 +529,7 @@ void update_frame_data(
             glm::mat4* mvp_mapping;
             vkMapMemory(
                 device,
-                frame_data->m_uniform_memory[descriptor_index],
+                frame_data->m_mvp_uniform_memory[descriptor_index],
                 0,
                 sizeof(glm::mat4),
                 0,
@@ -417,7 +538,21 @@ void update_frame_data(
 
             *(glm::mat4*)(mvp_mapping) = mvp;
 
-            vkUnmapMemory(device, frame_data->m_uniform_memory[descriptor_index]);
+            vkUnmapMemory(device, frame_data->m_mvp_uniform_memory[descriptor_index]);
+
+            MaterialData* material_mapping;
+            vkMapMemory(
+                device,
+                frame_data->m_material_uniform_memory[descriptor_index],
+                0,
+                sizeof(MaterialData),
+                0,
+                (void**)&material_mapping
+            );
+
+            *(MaterialData*)(material_mapping) = material.m_data;
+
+            vkUnmapMemory(device, frame_data->m_material_uniform_memory[descriptor_index]);
 
             descriptor_index++;
         }
@@ -429,12 +564,21 @@ void destroy_frame_data(
     FrameData& frame_data
 ) {
     vkDestroyDescriptorPool(device, frame_data.m_descriptor_pool, nullptr);
-    for(auto ub : frame_data.m_uniform_buffers) {
+    for(auto ub : frame_data.m_mvp_uniform_buffers) {
         vkDestroyBuffer(device, ub, nullptr);
     }
-    for(auto um : frame_data.m_uniform_memory) {
+    for(auto um : frame_data.m_mvp_uniform_memory) {
         vkFreeMemory(device, um, nullptr);
     }
+    for(auto ub : frame_data.m_material_uniform_buffers) {
+        vkDestroyBuffer(device, ub, nullptr);
+    }
+    for(auto um : frame_data.m_material_uniform_memory) {
+        vkFreeMemory(device, um, nullptr);
+    }
+    vkDestroyImage(device, frame_data.m_empty_image, nullptr);
+    vkFreeMemory(device, frame_data.m_empty_image_memory, nullptr);
+    vkDestroyImageView(device, frame_data.m_empty_image_view, nullptr);
 }
 
 void init_vulkan(
@@ -745,7 +889,7 @@ VkPipeline create_graphics_pipeline(
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -830,7 +974,7 @@ void load_image(
         required_comp
     );
     if(pixels == nullptr) throw std::runtime_error("Could not load texture");
-    size_t image_size = *width * *width * required_comp;
+    size_t image_size = *width * *height * required_comp;
 
     *mip_levels = std::floor(std::log2(std::max(*width, *height))) + 1;
 
@@ -1336,7 +1480,7 @@ void generate_mipmaps(
         mip_height = std::max(1, mip_height / 2);
 
         image_blit.dstOffsets[0] = { 0, 0, 0 };
-        image_blit.dstOffsets[1] = { mip_width, mip_width, 1 };
+        image_blit.dstOffsets[1] = { mip_width, mip_height, 1 };
         image_blit.dstSubresource.mipLevel = i;
         image_blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         image_blit.dstSubresource.layerCount = 1;

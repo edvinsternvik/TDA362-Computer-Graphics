@@ -29,17 +29,21 @@ Texture load_texture_from_image(
     const char* file_name
 );
 
-struct Material {
-    void destroy(VkDevice device);
-
-    std::string m_name;
+struct MaterialData {
     glm::vec3 m_color;
     float m_metalic;
     float m_fresnel;
     float m_roughness;
-    glm::vec3 m_emission;
     float m_transparency;
     float m_ior;
+    glm::vec3 m_emission;
+};
+
+struct Material {
+    void destroy(VkDevice device);
+
+    std::string m_name;
+    MaterialData m_data;
     std::optional<Texture> m_color_texture;
     std::optional<Texture> m_metalic_texture;
     std::optional<Texture> m_fresnel_texture;
@@ -64,6 +68,12 @@ struct Model {
     std::vector<Mesh> m_meshes;
 };
 
+Model load_model_from_file(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    const char* file_name
+);
+
 struct Object {
     size_t m_model_index;
     glm::vec3 position;
@@ -71,14 +81,20 @@ struct Object {
 
 struct FrameData {
     VkDescriptorPool m_descriptor_pool;
-    std::vector<VkBuffer> m_uniform_buffers;
-    std::vector<VkDeviceMemory> m_uniform_memory;
+    std::vector<VkBuffer> m_mvp_uniform_buffers;
+    std::vector<VkDeviceMemory> m_mvp_uniform_memory;
+    std::vector<VkBuffer> m_material_uniform_buffers;
+    std::vector<VkDeviceMemory> m_material_uniform_memory;
     std::vector<VkDescriptorSet> m_descriptor_sets;
+    VkImage m_empty_image;
+    VkDeviceMemory m_empty_image_memory;
+    VkImageView m_empty_image_view;
     size_t m_max_objects;
 };
 
 FrameData create_frame_data(
     VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
     VkDescriptorSetLayout descriptor_set_layout,
     const size_t max_objects
 );
