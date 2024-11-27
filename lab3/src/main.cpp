@@ -225,6 +225,7 @@ int main() {
     // Create uniform buffers
     glm::mat4 view_matrix = glm::identity<glm::mat4>();
     glm::mat4 projection_matrix = glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0);
+    projection_matrix[1][1] *= -1.0;
 
     std::array<FrameData, MAX_FRAMES_IN_FLIGHT> frame_data;
     for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {

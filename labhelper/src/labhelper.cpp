@@ -360,7 +360,7 @@ FrameData create_frame_data(
         frame_data.m_mvp_uniform_buffers[i] = create_buffer(
             device,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            sizeof(glm::mat4)
+            2 * sizeof(glm::mat4)
         );
 
         frame_data.m_mvp_uniform_memory[i] = allocate_buffer_memory(
@@ -372,7 +372,7 @@ FrameData create_frame_data(
         frame_data.m_material_uniform_buffers[i] = create_buffer(
             device,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            sizeof(FrameData)
+            sizeof(MaterialData)
         );
 
         frame_data.m_material_uniform_memory[i] = allocate_buffer_memory(
@@ -456,11 +456,10 @@ void update_frame_data(
     for(size_t i = 0; i < objects.size(); ++i) {
         const Model& model = models[objects[i]->m_model_index];
 
-        glm::mat4 mvp = view_projection_matrix
+        glm::mat4 model_matrix = glm::identity<glm::mat4>()
             * glm::translate(glm::identity<glm::mat4>(), objects[i]->position)
             * glm::mat4_cast(objects[i]->orientation)
             * glm::scale(glm::identity<glm::mat4>(), objects[i]->scale);
-        mvp[1][1] *= -1.0;
 
         for(size_t j = 0; j < model.m_meshes.size(); ++j) {
             const Mesh& mesh = model.m_meshes[j];
@@ -529,17 +528,18 @@ void update_frame_data(
                 0, nullptr
             );
 
-            glm::mat4* mvp_mapping;
+            std::array<glm::mat4, 2>* mvp_mapping;
             vkMapMemory(
                 device,
                 frame_data->m_mvp_uniform_memory[descriptor_index],
                 0,
-                sizeof(glm::mat4),
+                2 * sizeof(glm::mat4),
                 0,
                 (void**)&mvp_mapping
             );
 
-            *(glm::mat4*)(mvp_mapping) = mvp;
+            (*(std::array<glm::mat4, 2>*)(mvp_mapping))[0] = model_matrix;
+            (*(std::array<glm::mat4, 2>*)(mvp_mapping))[1] = view_projection_matrix;
 
             vkUnmapMemory(device, frame_data->m_mvp_uniform_memory[descriptor_index]);
 
