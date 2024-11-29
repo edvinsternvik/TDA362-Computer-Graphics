@@ -1,7 +1,11 @@
+#include "SDL_keyboard.h"
+#include "SDL_mouse.h"
 #include "labhelper.hpp"
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/quaternion_geometric.hpp>
 #include <glm/ext/quaternion_transform.hpp>
+#include <glm/geometric.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -16,6 +20,7 @@
 #include <imgui.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_vulkan.h>
+#include <chrono>
 
 const int SCREEN_WIDTH = 640;
 const int SCREEN_HEIGHT = 480;
@@ -208,18 +213,28 @@ int main() {
 
     // Load objects
     Model car_model = load_model_from_file(vk_device, physical_device, command_pool, graphics_queue, "../scenes/car.obj");
+    Model city_model = load_model_from_file(vk_device, physical_device, command_pool, graphics_queue, "../scenes/city.obj");
     std::vector<Model> models = {
-        car_model
+        city_model, car_model
     };
 
+    Object city_object = {};
+    city_object.position = glm::zero<glm::vec3>();
+    city_object.orientation = glm::identity<glm::quat>();
+    city_object.scale = glm::one<glm::vec3>();
+    city_object.m_model_index = 0;
+
     Object car_object = {};
-    car_object.position = glm::vec3(0.0, 0.0, -10.0);
+    car_object.position = glm::vec3(0.0, -1.0, -10.0);
     car_object.orientation = glm::identity<glm::quat>();
     car_object.scale = glm::one<glm::vec3>();
-    car_object.m_model_index = 0;
+    car_object.m_model_index = 1;
+
+    Object car_object_auto = car_object;
+    car_object_auto.position = glm::vec3(35.0, -1.0, 0.0);
 
     std::vector<Object*> objects = {
-        &car_object
+        &city_object, &car_object, &car_object_auto
     };
 
     // Create uniform buffers
@@ -262,8 +277,6 @@ int main() {
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
-        car_object.orientation = glm::rotate(car_object.orientation, 0.01f, glm::vec3(0.0, 1.0, 0.0));
-
         update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, projection_matrix * view_matrix);
 
         VkCommandBufferBeginInfo begin_info = {};
@@ -377,6 +390,11 @@ int main() {
 
     uint32_t current_frame = 0;
     bool framebuffer_resized = false;
+    glm::vec3 camera_forward = glm::normalize(glm::vec3(0.0, 0.0, -1.0));
+    glm::vec3 camera_position = glm::zero<glm::vec3>();
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+    float previous_frame_time = 0.0f;
 
     // Run application
     SDL_Event e; bool quit = false;
@@ -386,6 +404,48 @@ int main() {
             if(e.type == SDL_QUIT) quit = true;
             if(e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_RESIZED) framebuffer_resized = true;
         }
+
+        // Game logic
+		std::chrono::duration<float> current_time = std::chrono::high_resolution_clock::now() - start_time;
+		float delta_time = current_time.count() - previous_frame_time;
+        previous_frame_time = current_time.count();
+
+        const uint8_t* keyboard_state = SDL_GetKeyboardState(nullptr);
+        glm::vec3 kb_input = glm::zero<glm::vec3>();
+        if(keyboard_state[SDL_SCANCODE_W]) kb_input += glm::vec3(0.0, 0.0, -1.0);
+        if(keyboard_state[SDL_SCANCODE_A]) kb_input += glm::vec3(-1.0, 0.0, 0.0);
+        if(keyboard_state[SDL_SCANCODE_S]) kb_input += glm::vec3(0.0, 0.0, 1.0);
+        if(keyboard_state[SDL_SCANCODE_D]) kb_input += glm::vec3(1.0, 0.0, 0.0);
+        if(keyboard_state[SDL_SCANCODE_Q]) kb_input += glm::vec3(0.0, 1.0, 0.0);
+        if(keyboard_state[SDL_SCANCODE_E]) kb_input += glm::vec3(0.0, -1.0, 0.0);
+
+        int mouse_dx, mouse_dy;
+        SDL_GetRelativeMouseState(&mouse_dx, &mouse_dy);
+
+        uint32_t mouse_state = SDL_GetMouseState(nullptr, nullptr);
+        glm::vec3 world_up = glm::vec3(0.0, 1.0, 0.0);
+        if(SDL_BUTTON_LEFT & mouse_state) {
+            glm::vec3 camera_right = glm::normalize(glm::cross(camera_forward, world_up));
+            camera_forward = camera_forward * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dx, world_up);
+            camera_forward = camera_forward * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dy, camera_right);
+            camera_right = glm::normalize(glm::cross(camera_forward, world_up));
+            glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_forward));
+
+            glm::mat3 camera_basis = glm::mat3(camera_right, camera_up, -camera_forward);
+            camera_position -= camera_basis * kb_input * delta_time * 10.0f;
+
+            glm::mat4 camera_rot = glm::mat4(glm::transpose(camera_basis));
+            view_matrix = camera_rot * glm::translate(glm::identity<glm::mat4>(), camera_position);
+        }
+        else {
+            car_object.position += car_object.orientation * glm::vec3(0.0, 0.0, -kb_input.z) * delta_time * 20.0f;
+            car_object.orientation = glm::rotate(car_object.orientation, kb_input.x * delta_time * 4.0f, world_up);
+        }
+
+        glm::vec3 auto_dp = glm::vec3(std::cos(previous_frame_time), 0.0, std::sin(previous_frame_time));
+        car_object_auto.position = glm::vec3(22.0f, -1.0, 0.0) + auto_dp * 10.0f;
+        glm::vec3 auto_forward = glm::vec3(auto_dp.z, 0.0, -auto_dp.x);
+        car_object_auto.orientation = glm::quatLookAt(auto_forward, world_up);
 
         // Render frame
         vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
