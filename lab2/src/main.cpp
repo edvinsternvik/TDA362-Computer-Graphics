@@ -161,13 +161,13 @@ int main() {
     std::vector<float> vertices[2];
     vertices[0] = {
     //     X     Y        Z     U     V
-        -10.0f, 0.0f,  -10.0f, 0.0f, 0.0f,
-        -10.0f, 0.0f, -330.0f, 0.0f, 15.0f,
          10.0f, 0.0f,  -10.0f, 1.0f, 0.0f,
-
         -10.0f, 0.0f, -330.0f, 0.0f, 15.0f,
+        -10.0f, 0.0f,  -10.0f, 0.0f, 0.0f,
+
+         10.0f, 0.0f,  -10.0f, 1.0f, 0.0f,
          10.0f, 0.0f, -330.0f, 1.0f, 15.0f,
-         10.0f, 0.0f,  -10.0f, 1.0f, 0.0f
+        -10.0f, 0.0f, -330.0f, 0.0f, 15.0f
     };
 
     vertices[1] = {
@@ -229,53 +229,148 @@ int main() {
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
     // Create uniform buffers
-    Material road_material = {};
-    road_material.m_color_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "asphalt.jpg");
-    Mesh road_mesh = {};
-    road_mesh.m_start_index = 0;
-    road_mesh.m_num_vertices = vertices[0].size();
-    road_mesh.m_material_index = 0;
-    Model road_model = {};
-    road_model.m_materials = { road_material };
-    road_model.m_vertex_buffer = vertex_buffers[0];
-    road_model.m_vertex_buffer_memory = vertex_buffer_memories[0];
-    road_model.m_meshes = { road_mesh };
-
-    Material explosion_material = {};
-    explosion_material.m_color_texture = load_texture_from_image(vk_device, physical_device, command_pool, graphics_queue, "explosion.png");
-    Mesh explosion_mesh = {};
-    explosion_mesh.m_start_index = 0;
-    explosion_mesh.m_num_vertices = vertices[1].size();
-    explosion_mesh.m_material_index = 0;
-    Model explosion_model = {};
-    explosion_model.m_materials = { explosion_material };
-    explosion_model.m_vertex_buffer = vertex_buffers[1];
-    explosion_model.m_vertex_buffer_memory = vertex_buffer_memories[1];
-    explosion_model.m_meshes = { explosion_mesh };
-
-    Object road = {};
-    road.m_model_index = 0;
-    road.position = glm::vec3(0.0, 10.0, 0.0);
-
-    Object explosion = {};
-    explosion.m_model_index = 1;
-    explosion.position = glm::vec3(0.5, 0.5, -4.0);
-
-    std::vector<Object> objects = {
-        road, explosion
+    struct Object {
+        Texture texture;
+        VkBuffer vertex_buffer;
+        VkDeviceMemory vertex_buffer_memory;
+        glm::vec3 position;
     };
-
-    std::vector<Model> models = {
-        road_model, explosion_model
+    Object asphalt = {};
+    asphalt.texture = load_texture_from_image(
+        vk_device, physical_device, command_pool, graphics_queue,
+        "asphalt.jpg"
+    );
+    asphalt.vertex_buffer = vertex_buffers[0];
+    asphalt.vertex_buffer_memory = vertex_buffer_memories[0];
+    asphalt.position = glm::vec3(0.0, 10.0, 0.0);
+    Object explosion = {};
+    explosion.texture = load_texture_from_image(
+        vk_device, physical_device, command_pool, graphics_queue,
+        "explosion.png"
+    );
+    explosion.vertex_buffer = vertex_buffers[1];
+    explosion.vertex_buffer_memory = vertex_buffer_memories[1];
+    explosion.position = glm::vec3(0.5, 0.5, -4.0);
+    std::array<Object*, 2> objects = {
+        &asphalt, &explosion
     };
 
     glm::mat4 view_projection_matrix = glm::perspective(glm::radians(45.0), (640.0 / 480.0), 0.01, 400.0);
 
+    struct FrameData {
+        VkDescriptorPool descriptor_pool;
+        std::vector<VkDescriptorSet> descriptor_sets;
+        std::vector<VkBuffer> uniform_buffers;
+        std::vector<VkDeviceMemory> uniform_memory;
+    };
+
     std::array<FrameData, MAX_FRAMES_IN_FLIGHT> frame_data;
-    for(int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        frame_data[i] = create_frame_data(vk_device, physical_device, descriptor_set_layout, 2);
-        update_frame_data(vk_device, &frame_data[i], sampler, objects, models, view_projection_matrix);
+    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        frame_data[i].uniform_buffers.resize(objects.size());
+        frame_data[i].uniform_memory.resize(objects.size());
+        frame_data[i].descriptor_sets.resize(objects.size());
+
+        std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes = {};
+        descriptor_pool_sizes[0].descriptorCount = objects.size();
+        descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptor_pool_sizes[1].descriptorCount = objects.size();
+        descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+
+        VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
+        descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptor_pool_create_info.maxSets = objects.size();
+        descriptor_pool_create_info.poolSizeCount = descriptor_pool_sizes.size();
+        descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
+        vkCreateDescriptorPool(vk_device, &descriptor_pool_create_info, nullptr, &frame_data[i].descriptor_pool);
+
+        std::vector<VkDescriptorSetLayout> descriptor_set_layouts(objects.size(), descriptor_set_layout);
+        VkDescriptorSetAllocateInfo descriptor_set_allocate_info = {};
+        descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptor_set_allocate_info.descriptorPool = frame_data[i].descriptor_pool;
+        descriptor_set_allocate_info.descriptorSetCount = objects.size();
+        descriptor_set_allocate_info.pSetLayouts = descriptor_set_layouts.data();
+        vkAllocateDescriptorSets(vk_device, &descriptor_set_allocate_info, frame_data[i].descriptor_sets.data());
+
+        for(size_t j = 0; j < objects.size(); ++j) {
+            frame_data[i].uniform_buffers[j] = create_buffer(
+                vk_device,
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                sizeof(glm::mat4)
+            );
+            frame_data[i].uniform_memory[j] = allocate_buffer_memory(
+                vk_device, physical_device,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                frame_data[i].uniform_buffers[j]
+            );
+        }
     }
+
+    auto update_frame_data = [&](uint32_t frame_index) {
+        for(size_t obj_i = 0; obj_i < objects.size(); ++obj_i) {
+            VkDescriptorBufferInfo descriptor_buffer_info = {};
+            descriptor_buffer_info.buffer = frame_data[frame_index].uniform_buffers[obj_i];
+            descriptor_buffer_info.range = sizeof(glm::mat4);
+            descriptor_buffer_info.offset = 0;
+
+            VkDescriptorImageInfo descriptor_image_info = {};
+            descriptor_image_info.sampler = sampler;
+            descriptor_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            descriptor_image_info.imageView = objects[obj_i]->texture.m_image_view;
+
+            std::array<VkWriteDescriptorSet, 2> descriptor_set_writes = {};
+            descriptor_set_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor_set_writes[0].descriptorCount = 1;
+            descriptor_set_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptor_set_writes[0].dstSet = frame_data[frame_index].descriptor_sets[obj_i];
+            descriptor_set_writes[0].dstBinding = 0;
+            descriptor_set_writes[0].dstArrayElement = 0;
+            descriptor_set_writes[0].pBufferInfo = &descriptor_buffer_info;
+            descriptor_set_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor_set_writes[1].descriptorCount = 1;
+            descriptor_set_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptor_set_writes[1].dstSet = frame_data[frame_index].descriptor_sets[obj_i];
+            descriptor_set_writes[1].dstBinding = 1;
+            descriptor_set_writes[1].dstArrayElement = 0;
+            descriptor_set_writes[1].pImageInfo = &descriptor_image_info;
+            vkUpdateDescriptorSets(
+                vk_device,
+                descriptor_set_writes.size(),
+                descriptor_set_writes.data(),
+                0, nullptr
+            );
+
+            glm::mat4* mvp_mapping;
+            vkMapMemory(
+                vk_device,
+                frame_data[frame_index].uniform_memory[obj_i],
+                0,
+                sizeof(glm::mat4),
+                0,
+                (void**)&mvp_mapping
+            );
+
+            *((glm::mat4*)mvp_mapping) =
+                view_projection_matrix
+                * glm::translate(glm::identity<glm::mat4>(), objects[obj_i]->position);
+
+            vkUnmapMemory(vk_device, frame_data[frame_index].uniform_memory[obj_i]);
+        }
+    };
+
+    auto destroy_frame_data = [&](const FrameData& frame_data) {
+        vkDestroyDescriptorPool(vk_device, frame_data.descriptor_pool, nullptr);
+        for(auto ub : frame_data.uniform_buffers) {
+            vkDestroyBuffer(vk_device, ub, nullptr);
+        };
+        for(auto um : frame_data.uniform_memory) {
+            vkFreeMemory(vk_device, um, nullptr);
+        }
+    };
+    auto destroy_object = [&](Object& object) {
+        object.texture.destroy(vk_device);
+        vkDestroyBuffer(vk_device, object.vertex_buffer, nullptr);
+        vkFreeMemory(vk_device, object.vertex_buffer_memory, nullptr);
+    };
 
     // Allocate command buffer
     std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> command_buffers;
@@ -297,7 +392,7 @@ int main() {
     VkSamplerMipmapMode mipmap_mode = sampler_create_info.mipmapMode;
     float anisotropy = sampler_create_info.maxAnisotropy;
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
-        update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, view_projection_matrix);
+        update_frame_data(current_frame);
 
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -337,22 +432,20 @@ int main() {
 
         VkDeviceSize offsets[] = { 0 };
 
-        for(const Object& object : objects) {
-            const Model& model = models[object.m_model_index];
-            for(const Mesh& mesh : model.m_meshes) {
-                vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.m_vertex_buffer, offsets);
-                
-                vkCmdBindDescriptorSets(
-                    command_buffer,
-                    VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    pipeline_layout,
-                    0, 1,
-                    &frame_data[current_frame].m_descriptor_sets[object.m_model_index],
-                    0, nullptr
-                );
+        for(size_t obj_i = 0; obj_i < objects.size(); ++obj_i) {
+            Object* object = objects[obj_i];
+            vkCmdBindVertexBuffers(command_buffer, 0, 1, &object->vertex_buffer, offsets);
+            
+            vkCmdBindDescriptorSets(
+                command_buffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                pipeline_layout,
+                0, 1,
+                &frame_data[current_frame].descriptor_sets[obj_i],
+                0, nullptr
+            );
 
-                vkCmdDraw(command_buffer, vertices[object.m_model_index].size(), 1, 0, 0);
-            }
+            vkCmdDraw(command_buffer, vertices[obj_i].size(), 1, 0, 0);
         }
 
         imgui_new_frame();
@@ -528,8 +621,8 @@ int main() {
 
     // Clean up
     imgui_cleanup(vk_device, imgui_descriptor_pool);
-    for(auto& fd : frame_data) destroy_frame_data(vk_device, fd);
-    for(auto& model : models) model.destroy(vk_device);
+    for(auto& obj : objects) destroy_object(*obj);
+    for(auto& fd : frame_data) destroy_frame_data(fd);
     vkDestroyDescriptorSetLayout(vk_device, descriptor_set_layout, nullptr);
     vkDestroySampler(vk_device, sampler, nullptr);
     for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);

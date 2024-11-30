@@ -39,7 +39,7 @@ target_include_directories(imgui PUBLIC
     ${SDL2_INCLUDE_DIR}
 )
 
-add_library(labhelper src/labhelper.cpp)
+add_library(labhelper src/labhelper.cpp src/model.cpp)
 
 target_compile_features(labhelper PUBLIC cxx_std_20)
 
