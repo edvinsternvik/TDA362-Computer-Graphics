@@ -82,65 +82,11 @@ int main() {
     VkShaderModule frag_shader_module = create_shader_module(vk_device, frag_shader_src);
 
     // Specify descriptors
-    VkDescriptorSetLayoutBinding mvp_layout_binding = {};
-    mvp_layout_binding.binding = 0;
-    mvp_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    mvp_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    mvp_layout_binding.descriptorCount = 1;
-    mvp_layout_binding.pImmutableSamplers = nullptr;
-
-    VkDescriptorSetLayoutBinding material_layout_binding = {};
-    material_layout_binding.binding = 1;
-    material_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    material_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    material_layout_binding.descriptorCount = 1;
-    material_layout_binding.pImmutableSamplers = nullptr;
-
-    std::array<VkDescriptorSetLayoutBinding, 5> sampler_layout_bindings = {};
-    for(size_t i = 0; i < sampler_layout_bindings.size(); ++i) {
-        sampler_layout_bindings[i].binding = 2 + i;
-        sampler_layout_bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        sampler_layout_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        sampler_layout_bindings[i].descriptorCount = 1;
-        sampler_layout_bindings[i].pImmutableSamplers = nullptr;
-    }
-
-    VkDescriptorSetLayout descriptor_set_layout = create_descriptor_set_layout(
-        vk_device,
-        {
-            mvp_layout_binding,
-            material_layout_binding,
-            sampler_layout_bindings[0],
-            sampler_layout_bindings[1],
-            sampler_layout_bindings[2],
-            sampler_layout_bindings[3],
-            sampler_layout_bindings[4]
-        }
-    );
+    VkDescriptorSetLayout descriptor_set_layout =
+        create_model_descriptor_set_layout(vk_device);
 
     // Specify vertex data description
-    VkVertexInputBindingDescription binding_description = {};
-    binding_description.binding = 0;
-    binding_description.stride = 8 * sizeof(float);
-    binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    VkVertexInputAttributeDescription position_attribute;
-    position_attribute.binding = 0;
-    position_attribute.location = 0;
-    position_attribute.offset = 0;
-    position_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
-
-    VkVertexInputAttributeDescription normal_attribute;
-    normal_attribute.binding = 0;
-    normal_attribute.location = 1;
-    normal_attribute.offset = 3 * sizeof(float);
-    normal_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
-
-    VkVertexInputAttributeDescription uv_attribute;
-    uv_attribute.binding = 0;
-    uv_attribute.location = 2;
-    uv_attribute.offset = 6 * sizeof(float);
-    uv_attribute.format = VK_FORMAT_R32G32_SFLOAT;
+    auto model_attributes = create_model_attributes();
 
     // Pipeline
     VkPipelineLayout pipeline_layout = create_pipeline_layout(
@@ -152,8 +98,8 @@ int main() {
         vk_device,
         pipeline_layout,
         render_pass,
-        { binding_description },
-        { position_attribute, normal_attribute, uv_attribute },
+        { model_attributes.first },
+        model_attributes.second,
         vert_shader_module,
         frag_shader_module
     );
@@ -203,8 +149,14 @@ int main() {
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
     // Load objects
-    Model car_model = load_model_from_file(vk_device, physical_device, command_pool, graphics_queue, "../scenes/car.obj");
-    Model city_model = load_model_from_file(vk_device, physical_device, command_pool, graphics_queue, "../scenes/city.obj");
+    Model car_model = load_model_from_file(
+        vk_device, physical_device, command_pool, graphics_queue,
+        "../scenes/car.obj"
+    );
+    Model city_model = load_model_from_file(
+        vk_device, physical_device, command_pool, graphics_queue,
+        "../scenes/city.obj"
+    );
     std::vector<Model> models = {
         city_model, car_model
     };
@@ -417,8 +369,12 @@ int main() {
         glm::vec3 world_up = glm::vec3(0.0, 1.0, 0.0);
         if(SDL_BUTTON_LEFT & mouse_state) {
             glm::vec3 camera_right = glm::normalize(glm::cross(camera_forward, world_up));
-            camera_forward = camera_forward * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dx, world_up);
-            camera_forward = camera_forward * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dy, camera_right);
+            camera_forward =
+                camera_forward
+                * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dx, world_up);
+            camera_forward =
+                camera_forward
+                * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dy, camera_right);
             camera_right = glm::normalize(glm::cross(camera_forward, world_up));
             glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_forward));
 
@@ -429,8 +385,11 @@ int main() {
             view_matrix = camera_rot * glm::translate(glm::identity<glm::mat4>(), camera_position);
         }
         else {
-            car_object.position += car_object.orientation * glm::vec3(0.0, 0.0, -kb_input.z) * delta_time * 20.0f;
-            car_object.orientation = glm::rotate(car_object.orientation, kb_input.x * delta_time * 4.0f, world_up);
+            car_object.position +=
+                car_object.orientation
+                * glm::vec3(0.0, 0.0, -kb_input.z) * delta_time * 20.0f;
+            car_object.orientation =
+                glm::rotate(car_object.orientation, kb_input.x * delta_time * 4.0f, world_up);
         }
 
         glm::vec3 auto_dp = glm::vec3(std::cos(previous_frame_time), 0.0, std::sin(previous_frame_time));
@@ -442,7 +401,9 @@ int main() {
         vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
 
         uint32_t image_index;
-        VkResult r = vkAcquireNextImageKHR(vk_device, swapchain, UINT64_MAX, image_avaiable[current_frame], VK_NULL_HANDLE, &image_index);
+        VkResult r = vkAcquireNextImageKHR(
+            vk_device, swapchain, UINT64_MAX, image_avaiable[current_frame], VK_NULL_HANDLE, &image_index
+        );
         if(r == VK_ERROR_OUT_OF_DATE_KHR) {
             surface_info = get_surface_info(physical_device, surface);
             vkDeviceWaitIdle(vk_device);

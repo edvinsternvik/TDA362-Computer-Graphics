@@ -509,3 +509,75 @@ void destroy_frame_data(
     vkDestroyImageView(device, frame_data.m_empty_image_view, nullptr);
 }
 
+VkDescriptorSetLayout create_model_descriptor_set_layout(
+    VkDevice device
+) {
+    VkDescriptorSetLayoutBinding mvp_layout_binding = {};
+    mvp_layout_binding.binding = 0;
+    mvp_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    mvp_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    mvp_layout_binding.descriptorCount = 1;
+    mvp_layout_binding.pImmutableSamplers = nullptr;
+
+    VkDescriptorSetLayoutBinding material_layout_binding = {};
+    material_layout_binding.binding = 1;
+    material_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    material_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    material_layout_binding.descriptorCount = 1;
+    material_layout_binding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 5> sampler_layout_bindings = {};
+    for(size_t i = 0; i < sampler_layout_bindings.size(); ++i) {
+        sampler_layout_bindings[i].binding = 2 + i;
+        sampler_layout_bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        sampler_layout_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        sampler_layout_bindings[i].descriptorCount = 1;
+        sampler_layout_bindings[i].pImmutableSamplers = nullptr;
+    }
+
+    return create_descriptor_set_layout(
+        device,
+        {
+            mvp_layout_binding,
+            material_layout_binding,
+            sampler_layout_bindings[0],
+            sampler_layout_bindings[1],
+            sampler_layout_bindings[2],
+            sampler_layout_bindings[3],
+            sampler_layout_bindings[4]
+        }
+    );
+}
+
+std::pair<
+    VkVertexInputBindingDescription,
+    std::vector<VkVertexInputAttributeDescription>
+> create_model_attributes() {
+    VkVertexInputBindingDescription binding_description = {};
+    binding_description.binding = 0;
+    binding_description.stride = 8 * sizeof(float);
+    binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription position_attribute;
+    position_attribute.binding = 0;
+    position_attribute.location = 0;
+    position_attribute.offset = 0;
+    position_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+
+    VkVertexInputAttributeDescription normal_attribute;
+    normal_attribute.binding = 0;
+    normal_attribute.location = 1;
+    normal_attribute.offset = 3 * sizeof(float);
+    normal_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
+
+    VkVertexInputAttributeDescription uv_attribute;
+    uv_attribute.binding = 0;
+    uv_attribute.location = 2;
+    uv_attribute.offset = 6 * sizeof(float);
+    uv_attribute.format = VK_FORMAT_R32G32_SFLOAT;
+
+    return {
+        binding_description,
+        { position_attribute, normal_attribute, uv_attribute }
+    };
+}

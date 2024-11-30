@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <vulkan/vulkan_core.h>
 
 struct MaterialData {
     glm::vec3 m_color;
@@ -90,3 +91,11 @@ void destroy_frame_data(
     FrameData& frame_data
 );
 
+VkDescriptorSetLayout create_model_descriptor_set_layout(
+    VkDevice device
+);
+
+std::pair<
+    VkVertexInputBindingDescription,
+    std::vector<VkVertexInputAttributeDescription>
+> create_model_attributes();
