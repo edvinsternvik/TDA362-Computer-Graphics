@@ -77,8 +77,8 @@ int main() {
     );
 
     // Create shader
-    std::vector<char> vert_shader_src = read_file("vert.spv");
-    std::vector<char> frag_shader_src = read_file("frag.spv");
+    std::vector<char> vert_shader_src = read_file("lab2/vert.spv");
+    std::vector<char> frag_shader_src = read_file("lab2/frag.spv");
     VkShaderModule vert_shader_module = create_shader_module(vk_device, vert_shader_src);
     VkShaderModule frag_shader_module = create_shader_module(vk_device, frag_shader_src);
 
@@ -238,7 +238,7 @@ int main() {
     Object asphalt = {};
     asphalt.texture = load_texture_from_image(
         vk_device, physical_device, command_pool, graphics_queue,
-        "asphalt.jpg"
+        "scenes/textures/asphalt.jpg"
     );
     asphalt.vertex_buffer = vertex_buffers[0];
     asphalt.vertex_buffer_memory = vertex_buffer_memories[0];
@@ -246,7 +246,7 @@ int main() {
     Object explosion = {};
     explosion.texture = load_texture_from_image(
         vk_device, physical_device, command_pool, graphics_queue,
-        "explosion.png"
+        "scenes/textures/explosion.png"
     );
     explosion.vertex_buffer = vertex_buffers[1];
     explosion.vertex_buffer_memory = vertex_buffer_memories[1];
