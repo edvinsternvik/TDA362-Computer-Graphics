@@ -83,7 +83,7 @@ int main() {
 
     // Specify descriptors
     VkDescriptorSetLayout descriptor_set_layout =
-        create_model_descriptor_set_layout(vk_device);
+        create_model_descriptor_set_layout(vk_device, {});
 
     // Specify vertex data description
     auto model_attributes = create_model_attributes();
@@ -191,16 +191,17 @@ int main() {
             vk_device, physical_device, command_pool,
             graphics_queue,
             descriptor_set_layout,
-            100
+            100,
+            {}
         );
 
         update_frame_data(
             vk_device,
             &frame_data[i],
             sampler,
-            objects,
-            models,
-            projection_matrix * view_matrix
+            objects, models,
+            view_matrix, projection_matrix,
+            {}, {}
         );
     }
 
@@ -220,7 +221,13 @@ int main() {
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
-        update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, projection_matrix * view_matrix);
+        update_frame_data(vk_device,
+            &frame_data[current_frame],
+            sampler,
+            objects, models,
+            view_matrix, projection_matrix,
+            {}, {}
+        );
 
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;

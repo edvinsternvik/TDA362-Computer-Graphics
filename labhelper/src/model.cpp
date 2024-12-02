@@ -1,7 +1,10 @@
 #include "model.hpp"
+#include <cstring>
+#include <functional>
 #include <glm/gtc/matrix_transform.hpp>
 #include <tiny_obj_loader.h>
 #include <filesystem>
+#include <vulkan/vulkan_core.h>
 
 void Material::destroy(VkDevice device) {
     if(m_color_texture.has_value()) m_color_texture->destroy(device);
@@ -257,7 +260,8 @@ FrameData create_frame_data(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
     VkDescriptorSetLayout descriptor_set_layout,
-    const size_t max_objects
+    const size_t max_objects,
+    const std::vector<Descriptor>& descriptors
 ) {
     FrameData frame_data;
     frame_data.m_max_objects = max_objects;
@@ -265,9 +269,15 @@ FrameData create_frame_data(
     frame_data.m_mvp_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
     frame_data.m_material_uniform_buffers = std::vector<VkBuffer>(max_objects);
     frame_data.m_material_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
+    frame_data.m_uniform_buffers = std::vector<std::vector<VkBuffer>>(
+        descriptors.size(), std::vector<VkBuffer>(max_objects)
+    );
+    frame_data.m_uniform_memory = std::vector<std::vector<VkDeviceMemory>>(
+        descriptors.size(), std::vector<VkDeviceMemory>(max_objects)
+    );
     frame_data.m_descriptor_sets = std::vector<VkDescriptorSet>(max_objects);
 
-    std::array<VkDescriptorPoolSize, 7> descriptor_pool_sizes = {};
+    std::vector<VkDescriptorPoolSize> descriptor_pool_sizes(7 + descriptors.size());
     descriptor_pool_sizes[0].descriptorCount = max_objects;
     descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptor_pool_sizes[1].descriptorCount = max_objects;
@@ -275,6 +285,10 @@ FrameData create_frame_data(
     for(size_t i = 2; i < 7; ++i) {
         descriptor_pool_sizes[i].descriptorCount = max_objects;
         descriptor_pool_sizes[i].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    }
+    for(size_t i = 0; i < descriptors.size(); ++i) {
+        descriptor_pool_sizes[7 + i].descriptorCount = max_objects;
+        descriptor_pool_sizes[7 + i].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     }
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -287,7 +301,7 @@ FrameData create_frame_data(
         frame_data.m_mvp_uniform_buffers[i] = create_buffer(
             device,
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            2 * sizeof(glm::mat4)
+            3 * sizeof(glm::mat4)
         );
         frame_data.m_mvp_uniform_memory[i] = allocate_buffer_memory(
             device, physical_device,
@@ -305,6 +319,19 @@ FrameData create_frame_data(
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             frame_data.m_material_uniform_buffers[i]
         );
+
+        for(size_t j = 0; j < descriptors.size(); ++j) {
+            frame_data.m_uniform_buffers[j][i] = create_buffer(
+                device,
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                descriptors[j].size
+            );
+            frame_data.m_uniform_memory[j][i] = allocate_buffer_memory(
+                device, physical_device,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                frame_data.m_uniform_buffers[j][i]
+            );
+        }
     }
 
     std::vector<VkDescriptorSetLayout> descriptor_set_layouts(max_objects, descriptor_set_layout);
@@ -375,7 +402,10 @@ void update_frame_data(
     VkSampler sampler,
     const std::vector<Object*>& objects,
     const std::vector<Model>& models,
-    glm::mat4 view_projection_matrix
+    glm::mat4 view_matrix,
+    glm::mat4 projection_matrix,
+    const std::vector<Descriptor>& descriptors,
+    const std::vector<void*>& descr_write_data
 ) {
     size_t descriptor_index = 0;
     for(size_t i = 0; i < objects.size(); ++i) {
@@ -386,24 +416,42 @@ void update_frame_data(
             * glm::mat4_cast(objects[i]->orientation)
             * glm::scale(glm::identity<glm::mat4>(), objects[i]->scale);
 
+        glm::mat4 model_view_matrix =
+            view_matrix
+            * model_matrix;
+
+        glm::mat4 model_view_projection_matrix =
+            projection_matrix
+            * model_view_matrix;
+
         for(size_t j = 0; j < model.m_meshes.size(); ++j) {
             const Mesh& mesh = model.m_meshes[j];
             const Material& material = model.m_materials[mesh.m_material_index];
 
             VkImageView color_view = frame_data->m_empty_image_view;
-            if(material.m_color_texture.has_value()) color_view = material.m_color_texture->m_image_view;
+            if(material.m_color_texture.has_value()) {
+                color_view = material.m_color_texture->m_image_view;
+            }
             VkImageView metallic_view = frame_data->m_empty_image_view;
-            if(material.m_metalic_texture.has_value()) metallic_view = material.m_metalic_texture->m_image_view;
+            if(material.m_metalic_texture.has_value()) {
+                metallic_view = material.m_metalic_texture->m_image_view;
+            }
             VkImageView fresnel_view = frame_data->m_empty_image_view;
-            if(material.m_fresnel_texture.has_value()) fresnel_view = material.m_fresnel_texture->m_image_view;
+            if(material.m_fresnel_texture.has_value()) {
+                fresnel_view = material.m_fresnel_texture->m_image_view;
+            }
             VkImageView roughness_view = frame_data->m_empty_image_view;
-            if(material.m_roughness_texture.has_value()) roughness_view = material.m_roughness_texture->m_image_view;
+            if(material.m_roughness_texture.has_value()) {
+                roughness_view = material.m_roughness_texture->m_image_view;
+            }
             VkImageView emission_view = frame_data->m_empty_image_view;
-            if(material.m_emission_texture.has_value()) emission_view = material.m_emission_texture->m_image_view;
+            if(material.m_emission_texture.has_value()) {
+                emission_view = material.m_emission_texture->m_image_view;
+            }
 
             VkDescriptorBufferInfo descriptor_mvp_buffer_info = {};
             descriptor_mvp_buffer_info.buffer = frame_data->m_mvp_uniform_buffers[descriptor_index];
-            descriptor_mvp_buffer_info.range = 2 * sizeof(glm::mat4);
+            descriptor_mvp_buffer_info.range = 3 * sizeof(glm::mat4);
             descriptor_mvp_buffer_info.offset = 0;
 
             VkDescriptorBufferInfo descriptor_material_buffer_info = {};
@@ -422,7 +470,14 @@ void update_frame_data(
             descriptor_image_infos[3].imageView = roughness_view;
             descriptor_image_infos[4].imageView = emission_view;
 
-            std::array<VkWriteDescriptorSet, 7> descriptor_set_writes = {};
+            std::vector<VkDescriptorBufferInfo> descr_buffer_infos(descriptors.size());
+            for(size_t i = 0; i < descriptors.size(); ++i) {
+                descr_buffer_infos[i].buffer = frame_data->m_uniform_buffers[i][descriptor_index];
+                descr_buffer_infos[i].range = descriptors[i].size;
+                descr_buffer_infos[i].offset = 0;
+            }
+
+            std::vector<VkWriteDescriptorSet> descriptor_set_writes(7 + descriptors.size());
             descriptor_set_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_set_writes[0].descriptorCount = 1;
             descriptor_set_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -446,6 +501,15 @@ void update_frame_data(
                 descriptor_set_writes[2 + i].dstArrayElement = 0;
                 descriptor_set_writes[2 + i].pImageInfo = &descriptor_image_infos[i];
             }
+            for(size_t i = 0; i < descriptors.size(); ++i) {
+                descriptor_set_writes[7 + i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                descriptor_set_writes[7 + i].descriptorCount = 1;
+                descriptor_set_writes[7 + i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                descriptor_set_writes[7 + i].dstSet = frame_data->m_descriptor_sets[descriptor_index];
+                descriptor_set_writes[7 + i].dstBinding = 7 + i;
+                descriptor_set_writes[7 + i].dstArrayElement = 0;
+                descriptor_set_writes[7 + i].pBufferInfo = &descr_buffer_infos[i];
+            }
             vkUpdateDescriptorSets(
                 device,
                 descriptor_set_writes.size(),
@@ -458,13 +522,14 @@ void update_frame_data(
                 device,
                 frame_data->m_mvp_uniform_memory[descriptor_index],
                 0,
-                2 * sizeof(glm::mat4),
+                3 * sizeof(glm::mat4),
                 0,
                 (void**)&mvp_mapping
             );
 
-            (*(std::array<glm::mat4, 2>*)(mvp_mapping))[0] = model_matrix;
-            (*(std::array<glm::mat4, 2>*)(mvp_mapping))[1] = view_projection_matrix;
+            (*(std::array<glm::mat4, 3>*)(mvp_mapping))[0] = model_matrix;
+            (*(std::array<glm::mat4, 3>*)(mvp_mapping))[1] = model_view_matrix;
+            (*(std::array<glm::mat4, 3>*)(mvp_mapping))[2] = model_view_projection_matrix;
 
             vkUnmapMemory(device, frame_data->m_mvp_uniform_memory[descriptor_index]);
 
@@ -481,6 +546,22 @@ void update_frame_data(
             *(MaterialData*)(material_mapping) = material.m_data;
 
             vkUnmapMemory(device, frame_data->m_material_uniform_memory[descriptor_index]);
+
+            for(size_t k = 0; k < descr_write_data.size(); ++k) {
+                void* mapping_data;
+                vkMapMemory(
+                    device,
+                    frame_data->m_uniform_memory[k][descriptor_index],
+                    0,
+                    descriptors[k].size,
+                    0,
+                    (void**)&mapping_data
+                );
+
+                memcpy(mapping_data, descr_write_data[k], descriptors[k].size);
+
+                vkUnmapMemory(device, frame_data->m_uniform_memory[k][descriptor_index]);
+            }
 
             descriptor_index++;
         }
@@ -504,48 +585,53 @@ void destroy_frame_data(
     for(auto um : frame_data.m_material_uniform_memory) {
         vkFreeMemory(device, um, nullptr);
     }
+    for(auto ubs : frame_data.m_uniform_buffers) {
+        for(auto ub : ubs) vkDestroyBuffer(device, ub, nullptr);
+    }
+    for(auto ums : frame_data.m_uniform_memory) {
+        for(auto um : ums) vkFreeMemory(device, um, nullptr);
+    }
     vkDestroyImage(device, frame_data.m_empty_image, nullptr);
     vkFreeMemory(device, frame_data.m_empty_image_memory, nullptr);
     vkDestroyImageView(device, frame_data.m_empty_image_view, nullptr);
 }
 
 VkDescriptorSetLayout create_model_descriptor_set_layout(
-    VkDevice device
+    VkDevice device,
+    const std::vector<Descriptor>& descriptors
 ) {
-    VkDescriptorSetLayoutBinding mvp_layout_binding = {};
-    mvp_layout_binding.binding = 0;
-    mvp_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    mvp_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    mvp_layout_binding.descriptorCount = 1;
-    mvp_layout_binding.pImmutableSamplers = nullptr;
+    std::vector<VkDescriptorSetLayoutBinding> bindings(7 + descriptors.size());
+    bindings[0].binding = 0;
+    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].pImmutableSamplers = nullptr;
 
-    VkDescriptorSetLayoutBinding material_layout_binding = {};
-    material_layout_binding.binding = 1;
-    material_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    material_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    material_layout_binding.descriptorCount = 1;
-    material_layout_binding.pImmutableSamplers = nullptr;
+    bindings[1].binding = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].pImmutableSamplers = nullptr;
 
-    std::array<VkDescriptorSetLayoutBinding, 5> sampler_layout_bindings = {};
-    for(size_t i = 0; i < sampler_layout_bindings.size(); ++i) {
-        sampler_layout_bindings[i].binding = 2 + i;
-        sampler_layout_bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        sampler_layout_bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        sampler_layout_bindings[i].descriptorCount = 1;
-        sampler_layout_bindings[i].pImmutableSamplers = nullptr;
+    for(size_t i = 0; i < 5; ++i) {
+        bindings[2 + i].binding = 2 + i;
+        bindings[2 + i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        bindings[2 + i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[2 + i].descriptorCount = 1;
+        bindings[2 + i].pImmutableSamplers = nullptr;
+    }
+
+    for(size_t i = 0; i < descriptors.size(); ++i) {
+        bindings[7 + i].binding = 7 + i;
+        bindings[7 + i].stageFlags = descriptors[i].stage_flags;
+        bindings[7 + i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        bindings[7 + i].descriptorCount = 1;
+        bindings[7 + i].pImmutableSamplers = nullptr;
     }
 
     return create_descriptor_set_layout(
         device,
-        {
-            mvp_layout_binding,
-            material_layout_binding,
-            sampler_layout_bindings[0],
-            sampler_layout_bindings[1],
-            sampler_layout_bindings[2],
-            sampler_layout_bindings[3],
-            sampler_layout_bindings[4]
-        }
+        bindings
     );
 }
 
