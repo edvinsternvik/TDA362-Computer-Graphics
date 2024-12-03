@@ -11,6 +11,23 @@
 
 const uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
+template<typename T>
+void write_memory_mapped(VkDevice device, VkDeviceMemory memory, T data) {
+    T* data_mapping;
+    vkMapMemory(
+        device,
+        memory,
+        0,
+        sizeof(T),
+        0,
+        (void**)&data_mapping
+    );
+
+    *(T*)(data_mapping) = data;
+
+    vkUnmapMemory(device, memory);
+}
+
 struct Texture {
     void destroy(VkDevice device);
 
@@ -66,7 +83,8 @@ VkPipeline create_graphics_pipeline(
     const std::vector<VkVertexInputBindingDescription>& vertex_binding_descriptions,
     const std::vector<VkVertexInputAttributeDescription>& vertex_attribute_descriptions,
     VkShaderModule vert_shader_module,
-    VkShaderModule frag_shader_module
+    VkShaderModule frag_shader_module,
+    std::optional<VkPipelineDepthStencilStateCreateInfo> depth_stencil_info = std::nullopt
 );
 
 void load_image(

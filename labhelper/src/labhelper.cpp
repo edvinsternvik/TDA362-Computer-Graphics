@@ -1,6 +1,7 @@
 #include "labhelper.hpp"
 #include <algorithm>
 #include <fstream>
+#include <optional>
 #include <stdexcept>
 #include <vulkan/vulkan_core.h>
 #include <set>
@@ -328,7 +329,8 @@ VkPipeline create_graphics_pipeline(
     const std::vector<VkVertexInputBindingDescription>& vertex_binding_descriptions,
     const std::vector<VkVertexInputAttributeDescription>& vertex_attribute_descriptions,
     VkShaderModule vert_shader_module,
-    VkShaderModule frag_shader_module
+    VkShaderModule frag_shader_module,
+    std::optional<VkPipelineDepthStencilStateCreateInfo> depth_stencil_info
 ) {
     std::vector<VkDynamicState> dynamic_states = {
         VK_DYNAMIC_STATE_VIEWPORT,
@@ -399,6 +401,7 @@ VkPipeline create_graphics_pipeline(
     depth_stencil.stencilTestEnable = VK_FALSE;
     depth_stencil.front = {};
     depth_stencil.back = {};
+    if(depth_stencil_info.has_value()) depth_stencil = depth_stencil_info.value();
 
     VkPipelineColorBlendAttachmentState color_blend_attachment = {};
     color_blend_attachment.colorWriteMask =

@@ -1,6 +1,5 @@
 #include "model.hpp"
 #include <cstring>
-#include <functional>
 #include <glm/gtc/matrix_transform.hpp>
 #include <tiny_obj_loader.h>
 #include <filesystem>
