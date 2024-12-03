@@ -19,9 +19,15 @@ layout(binding = 4) uniform sampler2D fresnel_sampler;
 layout(binding = 5) uniform sampler2D roughness_sampler;
 layout(binding = 6) uniform sampler2D emission_sampler;
 
-layout(set = 1, binding = 0) uniform LightUBO {
-    vec3 view_position;
-} ubo_light;
+layout(set = 1, binding = 0) uniform GlobalUBO {
+    mat4 view_inverse;
+    vec3 light_view_pos;
+    float light_intensity;
+    vec3 light_color;
+    float env_multiplier;
+};
+layout(set = 1, binding = 1) uniform sampler2D env_sampler;
+layout(set = 1, binding = 2) uniform sampler2D irradiance_sampler;
 
 layout(location = 0) out vec4 out_color;
 
@@ -33,12 +39,12 @@ vec3 direct_illumination(vec3 wo, vec3 n, vec3 base_color) {
 	//            to the light. If the light is backfacing the triangle,
 	//            return vec3(0);
 	///////////////////////////////////////////////////////////////////////////
-    vec3 wi = normalize(ubo_light.view_position - in_position);
+    vec3 wi = normalize(light_view_pos - in_position);
     float ndotwo = max(0.0001, dot(n, wo));
     float ndotwi = max(0.0001, dot(n, wi));
 
-    float d = length(ubo_light.view_position - in_position);
-    vec3 Li = 50.0f * vec3(1.0, 1.0, 1.0) / (d * d);
+    float d = length(light_view_pos - in_position);
+    vec3 Li = light_intensity * light_color / (d * d);
 
     if(dot(wi, n) <= 0.0) {
         return vec3(0.0);
@@ -86,6 +92,15 @@ vec3 indirect_illumination(vec3 wo, vec3 n, vec3 base_color) {
 	// Task 5 - Lookup the irradiance from the irradiance map and calculate
 	//          the diffuse reflection
 	///////////////////////////////////////////////////////////////////////////
+	vec3 world_normal = vec3(view_inverse * vec4(n, 0.0));
+	float theta = acos(max(-1.0f, min(1.0f, world_normal.y)));
+	float phi = atan(world_normal.z, world_normal.x);
+	if(phi < 0.0f) phi = phi + 2.0f * PI;
+	vec2 lookup = vec2(phi / (2.0 * PI), 1 - theta / PI);
+    lookup.y *= -1.0;
+	vec3 Li = env_multiplier * texture(irradiance_sampler, lookup).rgb;
+	vec3 diffuse_term = base_color * (1.0 / PI) * Li;
+	indirect_illum = diffuse_term;
 
 	///////////////////////////////////////////////////////////////////////////
 	// Task 6 - Look up in the reflection map from the perfect specular
@@ -114,7 +129,9 @@ void main() {
         emission_term *= tex_emission.rgb;
     }
 
-	out_color = vec4(dir_elim_term + emission_term, 1.0);
+    vec3 indir_elim_term = indirect_illumination(wo, normal, base_color);
+
+	out_color = vec4(dir_elim_term + emission_term + indir_elim_term, 1.0);
 
 	if(any(isnan(out_color))) {
 		out_color.rgb = vec3(1.f, 0.f, 1.f);

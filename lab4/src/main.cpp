@@ -123,35 +123,66 @@ int main() {
 
     // Material render pipeline
 
-    // Specify descriptors
-    VkBuffer extra_ubo_buffer = create_buffer(
-        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(glm::vec3)
-    );
-    VkDeviceMemory extra_ubo_memory = allocate_buffer_memory(
+    // Load environment map
+    Texture env_map = load_texture_from_image(
         vk_device, physical_device,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        extra_ubo_buffer
+        command_pool, graphics_queue,
+        "scenes/envmaps/001.hdr"
+    );
+    Texture irradiance_map = load_texture_from_image(
+        vk_device, physical_device,
+        command_pool, graphics_queue,
+        "scenes/envmaps/001_irradiance.hdr"
     );
 
-    std::vector<DescriptorInfo> extra_descriptors = {
+
+    // Specify descriptors
+    struct GlobalUBO {
+        glm::mat4 view_inverse;
+        glm::vec3 view_space_light_position;
+        float light_intensity;
+        glm::vec3 light_color;
+        float env_multiplier;
+    };
+
+    VkBuffer global_ubo_buffer = create_buffer(
+        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(GlobalUBO)
+    );
+    VkDeviceMemory global_ubo_memory = allocate_buffer_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        global_ubo_buffer
+    );
+
+    std::vector<DescriptorInfo> global_descriptors = {
         {
             0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
-            std::make_optional(extra_ubo_buffer), std::make_optional(sizeof(glm::vec3)),
+            std::make_optional(global_ubo_buffer), std::make_optional(sizeof(GlobalUBO)),
             std::nullopt, std::nullopt
+        },
+        {
+            1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(env_map.m_image_view), std::make_optional(sampler)
+        },
+        {
+            2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(irradiance_map.m_image_view), std::make_optional(sampler)
         }
     };
 
-    VkDescriptorPool extra_descriptor_pool;
-    VkDescriptorSetLayout extra_descriptor_set_layout;
-    VkDescriptorSet extra_descriptor_set;
+    VkDescriptorPool global_descriptor_pool;
+    VkDescriptorSetLayout global_descriptor_set_layout;
+    VkDescriptorSet global_descriptor_set;
     create_descriptors(
         vk_device,
-        &extra_descriptor_pool,
-        &extra_descriptor_set_layout, &extra_descriptor_set,
-        extra_descriptors
+        &global_descriptor_pool,
+        &global_descriptor_set_layout, &global_descriptor_set,
+        global_descriptors
     );
 
-    update_descriptors(vk_device, extra_descriptor_set, extra_descriptors);
+    update_descriptors(vk_device, global_descriptor_set, global_descriptors);
 
     VkDescriptorSetLayout material_descriptor_set_layout =
         create_model_descriptor_set_layout(vk_device);
@@ -172,7 +203,7 @@ int main() {
     // Pipeline
     VkPipelineLayout material_pipeline_layout = create_pipeline_layout(
         vk_device,
-        { material_descriptor_set_layout, extra_descriptor_set_layout }
+        { material_descriptor_set_layout, global_descriptor_set_layout }
     );
 
     VkPipeline material_pipeline = create_graphics_pipeline(
@@ -213,12 +244,6 @@ int main() {
     );
 
     // Load background
-    Texture bg_texture = load_texture_from_image(
-        vk_device, physical_device,
-        command_pool, graphics_queue,
-        "scenes/envmaps/001.hdr"
-    );
-
     std::array<float, 6 * 2> bg_vertices = {
         -1.0,  1.0,   1.0,  1.0,   1.0, -1.0,
          1.0, -1.0,  -1.0, -1.0,  -1.0,  1.0
@@ -265,7 +290,7 @@ int main() {
         {
             1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
-            std::make_optional(bg_texture.m_image_view), std::make_optional(sampler)
+            std::make_optional(env_map.m_image_view), std::make_optional(sampler)
         }
     };
 
@@ -351,8 +376,8 @@ int main() {
     light_object.m_model_index = 2;
 
     std::vector<Object*> objects = {
-        &spaceship_object,
-        /* &materialtest_object, */
+        /* &spaceship_object, */
+        &materialtest_object,
         &light_object
     };
 
@@ -396,8 +421,67 @@ int main() {
         "Could not allocate command buffer"
     );
 
+    // Create synchronization primitives
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> image_avaiable;
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> render_finished;
+    std::array<VkFence, MAX_FRAMES_IN_FLIGHT> frame_in_flight;
+    for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkSemaphoreCreateInfo semaphore_create_info = {};
+        semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VK_HANDLE_ERROR(
+            vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &image_avaiable[i]),
+            "Could not create semaphore"
+        );
+        VK_HANDLE_ERROR(
+            vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &render_finished[i]),
+            "Could not create semaphore"
+        );
+
+        VkFenceCreateInfo fence_create_info = {};
+        fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+        VK_HANDLE_ERROR(
+            vkCreateFence(vk_device, &fence_create_info, nullptr, &frame_in_flight[i]),
+            "Could not create fence"
+        );
+    }
+
+    // ImGUI
+    VkDescriptorPool imgui_descriptor_pool = imgui_init(
+        vk_instance,
+        window,
+        vk_device, physical_device,
+        graphics_family, graphics_queue,
+        render_pass
+    );
+
+    //
+
+    uint32_t current_frame = 0;
+    bool framebuffer_resized = false;
+    glm::vec3 camera_position = -glm::vec3(-30.0, 10.0, 30.0);
+    glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 5.0, 30.0));
+
+    auto start_time = std::chrono::high_resolution_clock::now();
+    float previous_frame_time = 0.0f;
+
+    BgUniformBlock bg_ubo = {};
+    bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
+    bg_ubo.camera_pos = camera_position;
+    bg_ubo.environment_multiplier = 1.0;
+    write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
+
+    GlobalUBO global_ubo = {};
+    global_ubo.view_inverse = glm::inverse(view_matrix);
+    global_ubo.view_space_light_position = view_matrix * glm::vec4(light_object.position, 1.0);
+    global_ubo.light_color = glm::vec3(1.0, 1.0, 1.0);
+    global_ubo.light_intensity = 100.0;
+    global_ubo.env_multiplier = 0.1;
+
     // Record command buffer for frame rendering
-    glm::vec4 clear_color(0.0, 0.2, 0.8, 1.0);
+    glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
         update_frame_data(
             vk_device,
@@ -462,7 +546,7 @@ int main() {
             VK_PIPELINE_BIND_POINT_GRAPHICS,
             material_pipeline_layout,
             1, 1,
-            &extra_descriptor_set,
+            &global_descriptor_set,
             0, nullptr
         );
 
@@ -487,7 +571,10 @@ int main() {
         }
 
         imgui_new_frame();
-        ImGui::ColorEdit4("clear colour", (float*)&clear_color);
+        ImGui::SliderFloat("Light intensity", &global_ubo.light_intensity, 0.0, 500.0);
+        ImGui::SliderFloat("Environment intensity", &global_ubo.env_multiplier, 0.0, 100.0);
+        ImGui::SliderFloat("Environment multiplier", &bg_ubo.environment_multiplier, 0.0, 2.0);
+        ImGui::ColorEdit3("Environment intensity", (float*)&global_ubo.light_color);
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
@@ -497,58 +584,6 @@ int main() {
         );
 
     };
-
-    // Create synchronization primitives
-    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> image_avaiable;
-    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> render_finished;
-    std::array<VkFence, MAX_FRAMES_IN_FLIGHT> frame_in_flight;
-    for(uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkSemaphoreCreateInfo semaphore_create_info = {};
-        semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VK_HANDLE_ERROR(
-            vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &image_avaiable[i]),
-            "Could not create semaphore"
-        );
-        VK_HANDLE_ERROR(
-            vkCreateSemaphore(vk_device, &semaphore_create_info, nullptr, &render_finished[i]),
-            "Could not create semaphore"
-        );
-
-        VkFenceCreateInfo fence_create_info = {};
-        fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-        VK_HANDLE_ERROR(
-            vkCreateFence(vk_device, &fence_create_info, nullptr, &frame_in_flight[i]),
-            "Could not create fence"
-        );
-    }
-
-    // ImGUI
-    VkDescriptorPool imgui_descriptor_pool = imgui_init(
-        vk_instance,
-        window,
-        vk_device, physical_device,
-        graphics_family, graphics_queue,
-        render_pass
-    );
-
-    //
-
-    uint32_t current_frame = 0;
-    bool framebuffer_resized = false;
-    glm::vec3 camera_position = -glm::vec3(-30.0, 10.0, 30.0);
-    glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 5.0, 30.0));
-
-    auto start_time = std::chrono::high_resolution_clock::now();
-    float previous_frame_time = 0.0f;
-
-    BgUniformBlock bg_ubo = {};
-    bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
-    bg_ubo.camera_pos = camera_position;
-    bg_ubo.environment_multiplier = 1.0;
-    write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
 
     // Run application
     SDL_Event e; bool quit = false;
@@ -606,12 +641,12 @@ int main() {
         /* light_object.position = */ 
         /*     glm::rotate(glm::identity<glm::quat>(), delta_time * 10.0f, world_up) */
         /*     * light_object.position; */
-        view_space_light_pos = view_matrix * glm::vec4(light_object.position, 1.0f);
-        write_memory_mapped(vk_device, extra_ubo_memory, view_space_light_pos);
+        global_ubo.view_inverse = glm::inverse(view_matrix);
+        global_ubo.view_space_light_position = view_matrix * glm::vec4(light_object.position, 1.0f);
+        write_memory_mapped(vk_device, global_ubo_memory, global_ubo);
 
         bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
         bg_ubo.camera_pos = camera_position;
-        bg_ubo.environment_multiplier = 1.0;
         write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
 
         // Render frame
@@ -690,10 +725,10 @@ int main() {
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
-    vkDestroyDescriptorSetLayout(vk_device, extra_descriptor_set_layout, nullptr);
-    vkDestroyDescriptorPool(vk_device, extra_descriptor_pool, nullptr);
-    vkDestroyBuffer(vk_device, extra_ubo_buffer, nullptr);
-    vkFreeMemory(vk_device, extra_ubo_memory, nullptr);
+    vkDestroyDescriptorSetLayout(vk_device, global_descriptor_set_layout, nullptr);
+    vkDestroyDescriptorPool(vk_device, global_descriptor_pool, nullptr);
+    vkDestroyBuffer(vk_device, global_ubo_buffer, nullptr);
+    vkFreeMemory(vk_device, global_ubo_memory, nullptr);
     vkDestroyDescriptorSetLayout(vk_device, bg_descriptor_set_layout, nullptr);
     vkDestroyPipeline(vk_device, bg_pipeline, nullptr);
     vkDestroyPipelineLayout(vk_device, bg_pipeline_layout, nullptr);
@@ -702,7 +737,8 @@ int main() {
     vkFreeMemory(vk_device, bg_ubo_memory, nullptr);
     vkDestroyBuffer(vk_device, bg_vertex_buffer, nullptr);
     vkFreeMemory(vk_device, bg_vertex_memory, nullptr);
-    bg_texture.destroy(vk_device);
+    env_map.destroy(vk_device);
+    irradiance_map.destroy(vk_device);
     imgui_cleanup(vk_device, imgui_descriptor_pool);
     for(auto& fd : frame_data) destroy_frame_data(vk_device, fd);
     for(auto& model : models) model.destroy(vk_device);
