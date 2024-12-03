@@ -67,6 +67,51 @@ void create_descriptors(
     vkAllocateDescriptorSets(device, &descriptor_set_info, descriptor_set);
 }
 
+void update_descriptors(
+    VkDevice device,
+    VkDescriptorSet descriptor_set,
+    const std::vector<DescriptorInfo>& descriptor_info
+) {
+    std::vector<VkDescriptorBufferInfo> buffer_infos(descriptor_info.size());
+    std::vector<VkDescriptorImageInfo> image_infos(descriptor_info.size());
+    std::vector<VkWriteDescriptorSet> descriptor_set_writes(descriptor_info.size());
+    for(size_t i = 0; i < descriptor_info.size(); ++i) {
+        bool has_buffer =
+            descriptor_info[i].buffer.has_value()
+            && descriptor_info[i].size.has_value();
+        bool has_image =
+            descriptor_info[i].image_view.has_value()
+            && descriptor_info[i].sampler.has_value();
+
+        if(has_buffer) {
+            buffer_infos[i].buffer = descriptor_info[i].buffer.value();
+            buffer_infos[i].range = descriptor_info[i].size.value();
+            buffer_infos[i].offset = 0;
+        }
+        if(has_image) {
+            image_infos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            image_infos[i].sampler = descriptor_info[i].sampler.value();
+            image_infos[i].imageView = descriptor_info[i].image_view.value();
+        }
+
+        descriptor_set_writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptor_set_writes[i].descriptorCount = 1;
+        descriptor_set_writes[i].descriptorType = descriptor_info[i].type;
+        descriptor_set_writes[i].dstSet = descriptor_set;
+        descriptor_set_writes[i].dstBinding = descriptor_info[i].binding;
+        descriptor_set_writes[i].dstArrayElement = 0;
+        if(has_buffer) descriptor_set_writes[i].pBufferInfo = &buffer_infos[i];
+        if(has_image) descriptor_set_writes[i].pImageInfo = &image_infos[i];
+    }
+
+    vkUpdateDescriptorSets(
+        device,
+        descriptor_set_writes.size(),
+        descriptor_set_writes.data(),
+        0, nullptr
+    );
+}
+
 void Texture::destroy(VkDevice device) {
     vkDestroyImage(device, m_image, nullptr);
     vkDestroyImageView(device, m_image_view, nullptr);

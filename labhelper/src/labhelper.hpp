@@ -32,12 +32,22 @@ struct DescriptorInfo {
     uint32_t binding;
     VkDescriptorType type;
     VkShaderStageFlags stage_flags;
+    std::optional<VkBuffer> buffer;
+    std::optional<size_t> size;
+    std::optional<VkImageView> image_view;
+    std::optional<VkSampler> sampler;
 };
 
 void create_descriptors(
     VkDevice device,
     VkDescriptorPool* descriptor_pool,
     VkDescriptorSetLayout* descriptor_set_layout, VkDescriptorSet* descriptor_set,
+    const std::vector<DescriptorInfo>& descriptor_info
+);
+
+void update_descriptors(
+    VkDevice device,
+    VkDescriptorSet descriptor_set,
     const std::vector<DescriptorInfo>& descriptor_info
 );
 

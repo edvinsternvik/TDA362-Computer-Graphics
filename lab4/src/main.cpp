@@ -6,7 +6,7 @@
 #include <glm/ext/quaternion_transform.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/matrix.hpp>
-#include <string>
+#include <optional>
 #include <vulkan/vulkan_core.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -124,9 +124,22 @@ int main() {
     // Material render pipeline
 
     // Specify descriptors
-    Descriptor light_pos_descr = {};
-    light_pos_descr.stage_flags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    light_pos_descr.size = sizeof(glm::vec3);
+    VkBuffer extra_ubo_buffer = create_buffer(
+        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(glm::vec3)
+    );
+    VkDeviceMemory extra_ubo_memory = allocate_buffer_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        extra_ubo_buffer
+    );
+
+    std::vector<DescriptorInfo> extra_descriptors = {
+        {
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::make_optional(extra_ubo_buffer), std::make_optional(sizeof(glm::vec3)),
+            std::nullopt, std::nullopt
+        }
+    };
 
     VkDescriptorPool extra_descriptor_pool;
     VkDescriptorSetLayout extra_descriptor_set_layout;
@@ -135,30 +148,10 @@ int main() {
         vk_device,
         &extra_descriptor_pool,
         &extra_descriptor_set_layout, &extra_descriptor_set,
-        {
-            { 7, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT }
-        }
+        extra_descriptors
     );
 
-    VkBuffer extra_ubo_buffer = create_buffer(
-        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(glm::vec3)
-    );
-    VkDeviceMemory extra_ubo_memory = allocate_buffer_memory(vk_device, physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, extra_ubo_buffer);
-
-    VkDescriptorBufferInfo extra_ubo_descriptor_info = {};
-    extra_ubo_descriptor_info.range = sizeof(glm::vec3);
-    extra_ubo_descriptor_info.buffer = extra_ubo_buffer;
-    extra_ubo_descriptor_info.offset = 0;
-
-    std::array<VkWriteDescriptorSet, 1> extra_descriptor_writes = {};
-    extra_descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    extra_descriptor_writes[0].descriptorCount = 1;
-    extra_descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    extra_descriptor_writes[0].dstSet = extra_descriptor_set;
-    extra_descriptor_writes[0].dstBinding = 7;
-    extra_descriptor_writes[0].dstArrayElement = 0;
-    extra_descriptor_writes[0].pBufferInfo = &extra_ubo_descriptor_info;
-    vkUpdateDescriptorSets(vk_device, extra_descriptor_writes.size(), extra_descriptor_writes.data(), 0, nullptr);
+    update_descriptors(vk_device, extra_descriptor_set, extra_descriptors);
 
     VkDescriptorSetLayout material_descriptor_set_layout =
         create_model_descriptor_set_layout(vk_device);
@@ -218,8 +211,64 @@ int main() {
     VkShaderModule bg_frag_shader_module = create_shader_module(
         vk_device, bg_frag_shader_src
     );
+
+    // Load background
+    Texture bg_texture = load_texture_from_image(
+        vk_device, physical_device,
+        command_pool, graphics_queue,
+        "scenes/envmaps/001.hdr"
+    );
+
+    std::array<float, 6 * 2> bg_vertices = {
+        -1.0,  1.0,   1.0,  1.0,   1.0, -1.0,
+         1.0, -1.0,  -1.0, -1.0,  -1.0,  1.0
+    };
+
+    VkBuffer bg_vertex_buffer = create_buffer(
+        vk_device,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        bg_vertices.size() * sizeof(float)
+    );
+    VkDeviceMemory bg_vertex_memory = allocate_buffer_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        bg_vertex_buffer
+    );
+    write_buffer_staged(
+        vk_device, physical_device,
+        graphics_queue, command_pool,
+        bg_vertex_buffer,
+        bg_vertices.data(), bg_vertices.size() * sizeof(float)
+    );
     
-    // 
+    // Descriptors
+    struct BgUniformBlock {
+        glm::mat4 inv_pv;
+        glm::vec3 camera_pos;
+        float environment_multiplier;
+    };
+
+    VkBuffer bg_ubo_buffer = create_buffer(
+        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(BgUniformBlock)
+    );
+    VkDeviceMemory bg_ubo_memory = allocate_buffer_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        bg_ubo_buffer
+    );
+    std::vector<DescriptorInfo> bg_descriptors = {
+        {
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::make_optional(bg_ubo_buffer), std::make_optional(sizeof(BgUniformBlock)),
+            std::nullopt, std::nullopt
+        },
+        {
+            1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(bg_texture.m_image_view), std::make_optional(sampler)
+        }
+    };
+
     VkDescriptorPool bg_descriptor_pool;
     VkDescriptorSetLayout bg_descriptor_set_layout;
     VkDescriptorSet bg_descriptor_set;
@@ -227,11 +276,10 @@ int main() {
         vk_device,
         &bg_descriptor_pool,
         &bg_descriptor_set_layout, &bg_descriptor_set,
-        {
-            { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT },
-            { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT }
-        }
+        bg_descriptors
     );
+
+    update_descriptors(vk_device, bg_descriptor_set, bg_descriptors);
 
     // Pipeline
     VkPipelineLayout bg_pipeline_layout = create_pipeline_layout(
@@ -264,73 +312,6 @@ int main() {
 
     vkDestroyShaderModule(vk_device, bg_vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, bg_frag_shader_module, nullptr);
-
-    // Load background
-    Texture bg_texture = load_texture_from_image(
-        vk_device, physical_device,
-        command_pool, graphics_queue,
-        "scenes/envmaps/001.hdr"
-    );
-
-    std::array<float, 6 * 2> bg_vertices = {
-        -1.0,  1.0,   1.0,  1.0,   1.0, -1.0,
-         1.0, -1.0,  -1.0, -1.0,  -1.0,  1.0
-    };
-
-    VkBuffer bg_vertex_buffer = create_buffer(
-        vk_device,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        bg_vertices.size() * sizeof(float)
-    );
-    VkDeviceMemory bg_vertex_memory = allocate_buffer_memory(
-        vk_device, physical_device,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        bg_vertex_buffer
-    );
-    write_buffer_staged(
-        vk_device, physical_device,
-        graphics_queue, command_pool,
-        bg_vertex_buffer,
-        bg_vertices.data(), bg_vertices.size() * sizeof(float)
-    );
-    
-    struct BgUniformBlock {
-        glm::mat4 inv_pv;
-        glm::vec3 camera_pos;
-        float environment_multiplier;
-    };
-    /* BgUniformBlock bg_ubo = {}; */
-    VkBuffer bg_ubo_buffer = create_buffer(
-        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(BgUniformBlock)
-    );
-    VkDeviceMemory bg_ubo_memory = allocate_buffer_memory(vk_device, physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, bg_ubo_buffer);
-
-    VkDescriptorBufferInfo bg_ubo_descriptor_info = {};
-    bg_ubo_descriptor_info.range = sizeof(BgUniformBlock);
-    bg_ubo_descriptor_info.buffer = bg_ubo_buffer;
-    bg_ubo_descriptor_info.offset = 0;
-
-    VkDescriptorImageInfo bg_image_info = {};
-    bg_image_info.sampler = sampler;
-    bg_image_info.imageView = bg_texture.m_image_view;
-    bg_image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-    std::array<VkWriteDescriptorSet, 2> bg_descriptor_writes = {};
-    bg_descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    bg_descriptor_writes[0].descriptorCount = 1;
-    bg_descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bg_descriptor_writes[0].dstSet = bg_descriptor_set;
-    bg_descriptor_writes[0].dstBinding = 0;
-    bg_descriptor_writes[0].dstArrayElement = 0;
-    bg_descriptor_writes[0].pBufferInfo = &bg_ubo_descriptor_info;
-    bg_descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    bg_descriptor_writes[1].descriptorCount = 1;
-    bg_descriptor_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bg_descriptor_writes[1].dstSet = bg_descriptor_set;
-    bg_descriptor_writes[1].dstBinding = 1;
-    bg_descriptor_writes[1].dstArrayElement = 0;
-    bg_descriptor_writes[1].pImageInfo = &bg_image_info;
-    vkUpdateDescriptorSets(vk_device, bg_descriptor_writes.size(), bg_descriptor_writes.data(), 0, nullptr);
 
     // Load objects
     Model spaceship_model = load_model_from_file(
@@ -622,7 +603,9 @@ int main() {
             spaceship_object.orientation, 0.25f * delta_time, world_up
         );
 
-        light_object.position = glm::rotate(glm::identity<glm::quat>(), delta_time * 10.0f, world_up) * light_object.position;
+        /* light_object.position = */ 
+        /*     glm::rotate(glm::identity<glm::quat>(), delta_time * 10.0f, world_up) */
+        /*     * light_object.position; */
         view_space_light_pos = view_matrix * glm::vec4(light_object.position, 1.0f);
         write_memory_mapped(vk_device, extra_ubo_memory, view_space_light_pos);
 
