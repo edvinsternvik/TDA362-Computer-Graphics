@@ -28,6 +28,7 @@ layout(set = 1, binding = 0) uniform GlobalUBO {
 };
 layout(set = 1, binding = 1) uniform sampler2D env_sampler;
 layout(set = 1, binding = 2) uniform sampler2D irradiance_sampler;
+layout(set = 1, binding = 3) uniform sampler2D reflection_sampler;
 
 layout(location = 0) out vec4 out_color;
 
@@ -106,6 +107,24 @@ vec3 indirect_illumination(vec3 wo, vec3 n, vec3 base_color) {
 	// Task 6 - Look up in the reflection map from the perfect specular
 	//          direction and calculate the dielectric and metal terms.
 	///////////////////////////////////////////////////////////////////////////
+	vec3 wi = normalize(reflect(-wo, n));
+	vec3 wr = normalize(vec3(view_inverse * vec4(wi, 0.0)));
+	theta = acos(max(-1.0f, min(1.0f, wr.y)));
+	phi = atan(wr.z, wr.x);
+	if(phi < 0.0f) phi = phi + 2.0f * PI;
+	lookup = vec2(phi / (2.0 * PI), 1 - theta / PI);
+    lookup.y *= -1.0;
+	float roughness = sqrt(sqrt(2.0 / (ubo_material.roughness + 2.0)));
+	Li = env_multiplier * textureLod(reflection_sampler, lookup, roughness * 7.0).rgb;
+	vec3 wh = normalize(wi + wo);
+	float wodotwh = max(0.0, dot(wo, wh));
+	float F = ubo_material.fresnel + (1.0 - ubo_material.fresnel) * pow(1.0 - wodotwh, 5.0);
+	vec3 dielectric_term = F * Li + (1.0 - F) * diffuse_term;
+	vec3 metal_term = F * base_color * Li;
+
+	vec3 microfacet_term = ubo_material.metalic * metal_term + (1.0 - ubo_material.metalic) * dielectric_term;
+
+	indirect_illum = microfacet_term;
 
 	return indirect_illum;
 }

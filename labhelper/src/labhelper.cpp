@@ -121,9 +121,11 @@ void Texture::destroy(VkDevice device) {
 Texture load_texture_from_image(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
-    const char* file_name
+    const char* file_name,
+    size_t lods
 ) {
     Texture texture = {};
+    texture.m_mip_levels = lods;
     load_image(
         device, physical_device,
         command_pool,
@@ -556,7 +558,9 @@ void load_image(
     if(pixels == nullptr) throw std::runtime_error("Could not load texture");
     size_t image_size = *width * *height * required_comp;
 
-    *mip_levels = std::floor(std::log2(std::max(*width, *height))) + 1;
+    if(*mip_levels <= 0) {
+        *mip_levels = std::floor(std::log2(std::max(*width, *height))) + 1;
+    }
 
     *image = create_image(
         device,
@@ -590,7 +594,8 @@ void load_image(
         command_pool,
         *image,
         pixels, image_size,
-        *width, *height
+        *width, *height,
+        0
     );
 
     generate_mipmaps(
@@ -1237,7 +1242,7 @@ void write_image_staged(
     VkDevice device, VkPhysicalDevice physical_device, VkQueue cmd_queue,
     VkCommandPool command_pool,
     VkImage image,
-    void* data, size_t data_size, uint32_t width, uint32_t height
+    void* data, size_t data_size, uint32_t width, uint32_t height, uint32_t mip_level
 ) {
     VkBuffer staging_buffer = create_buffer(
         device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, data_size
@@ -1269,7 +1274,7 @@ void write_image_staged(
     image_copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     image_copy_region.imageSubresource.layerCount = 1;
     image_copy_region.imageSubresource.baseArrayLayer = 0;
-    image_copy_region.imageSubresource.mipLevel = 0;
+    image_copy_region.imageSubresource.mipLevel = mip_level;
     vkCmdCopyBufferToImage(
         cmd_buffer,
         staging_buffer,

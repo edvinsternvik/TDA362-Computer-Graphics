@@ -2,15 +2,12 @@
 #include "SDL_mouse.h"
 #include "labhelper.hpp"
 #include "model.hpp"
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/ext/quaternion_transform.hpp>
-#include <glm/gtc/constants.hpp>
-#include <glm/matrix.hpp>
 #include <optional>
 #include <vulkan/vulkan_core.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
 #include <vector>
 #include <array>
 #include <imgui.h>
@@ -134,7 +131,63 @@ int main() {
         command_pool, graphics_queue,
         "scenes/envmaps/001_irradiance.hdr"
     );
+    std::vector<const char*> reflection_lods = {
+        "scenes/envmaps/001_dl_0.hdr",
+        "scenes/envmaps/001_dl_1.hdr",
+        "scenes/envmaps/001_dl_2.hdr",
+        "scenes/envmaps/001_dl_3.hdr",
+        "scenes/envmaps/001_dl_4.hdr",
+        "scenes/envmaps/001_dl_5.hdr",
+        "scenes/envmaps/001_dl_6.hdr",
+        "scenes/envmaps/001_dl_7.hdr",
+    };
 
+    Texture reflection_map = load_texture_from_image(
+        vk_device, physical_device,
+        command_pool, graphics_queue,
+        reflection_lods[0],
+        reflection_lods.size()
+    );
+    transition_image_layout(
+        vk_device,
+        command_pool, graphics_queue,
+        reflection_map.m_image,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        reflection_lods.size()
+    );
+    for(size_t i = 1; i < reflection_lods.size(); ++i) {
+        int w, h, c;
+        stbi_uc* pixels = stbi_load(
+            reflection_lods[i],
+            &w, &h, &c,
+            4
+        );
+        if(pixels == nullptr) throw std::runtime_error("Could not load image");
+
+        size_t mip_size = w * h * 4;
+
+        write_image_staged(
+            vk_device, physical_device,
+            graphics_queue, command_pool,
+            reflection_map.m_image,
+            pixels, mip_size,
+            w, h,
+            i
+        );
+
+        stbi_image_free(pixels);
+    }
+    transition_image_layout(
+        vk_device,
+        command_pool, graphics_queue,
+        reflection_map.m_image,
+        VK_FORMAT_R8G8B8A8_SRGB,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        reflection_lods.size()
+    );
 
     // Specify descriptors
     struct GlobalUBO {
@@ -169,6 +222,11 @@ int main() {
             2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
             std::make_optional(irradiance_map.m_image_view), std::make_optional(sampler)
+        },
+        {
+            3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(reflection_map.m_image_view), std::make_optional(sampler)
         }
     };
 
@@ -376,8 +434,8 @@ int main() {
     light_object.m_model_index = 2;
 
     std::vector<Object*> objects = {
-        /* &spaceship_object, */
-        &materialtest_object,
+        &spaceship_object,
+        /* &materialtest_object, */
         &light_object
     };
 
@@ -470,7 +528,7 @@ int main() {
     BgUniformBlock bg_ubo = {};
     bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
     bg_ubo.camera_pos = camera_position;
-    bg_ubo.environment_multiplier = 1.0;
+    bg_ubo.environment_multiplier = 0.5;
     write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
 
     GlobalUBO global_ubo = {};
@@ -739,6 +797,7 @@ int main() {
     vkFreeMemory(vk_device, bg_vertex_memory, nullptr);
     env_map.destroy(vk_device);
     irradiance_map.destroy(vk_device);
+    reflection_map.destroy(vk_device);
     imgui_cleanup(vk_device, imgui_descriptor_pool);
     for(auto& fd : frame_data) destroy_frame_data(vk_device, fd);
     for(auto& model : models) model.destroy(vk_device);

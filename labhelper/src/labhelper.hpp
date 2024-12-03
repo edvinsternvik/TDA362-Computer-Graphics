@@ -64,7 +64,8 @@ struct Texture {
 Texture load_texture_from_image(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
-    const char* file_name
+    const char* file_name,
+    size_t lods = 0
 );
 
 struct SurfaceInfo {
@@ -258,7 +259,7 @@ void write_image_staged(
     VkDevice device, VkPhysicalDevice physical_device, VkQueue cmd_queue,
     VkCommandPool command_pool,
     VkImage image,
-    void* data, size_t data_size, uint32_t width, uint32_t height
+    void* data, size_t data_size, uint32_t width, uint32_t height, uint32_t mip_level
 );
 
 VkDescriptorPool imgui_init(

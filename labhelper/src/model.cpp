@@ -343,7 +343,7 @@ FrameData create_frame_data(
         device, physical_device, command_queue, command_pool,
         frame_data.m_empty_image,
         empty_image_data.data(), empty_image_data.size(),
-        1, 1
+        1, 1, 0
     );
     transition_image_layout(
         device, command_pool, command_queue,
