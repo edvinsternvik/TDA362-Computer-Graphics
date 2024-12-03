@@ -259,8 +259,7 @@ FrameData create_frame_data(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
     VkDescriptorSetLayout descriptor_set_layout,
-    const size_t max_objects,
-    const std::vector<Descriptor>& descriptors
+    const size_t max_objects
 ) {
     FrameData frame_data;
     frame_data.m_max_objects = max_objects;
@@ -268,15 +267,9 @@ FrameData create_frame_data(
     frame_data.m_mvp_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
     frame_data.m_material_uniform_buffers = std::vector<VkBuffer>(max_objects);
     frame_data.m_material_uniform_memory = std::vector<VkDeviceMemory>(max_objects);
-    frame_data.m_uniform_buffers = std::vector<std::vector<VkBuffer>>(
-        descriptors.size(), std::vector<VkBuffer>(max_objects)
-    );
-    frame_data.m_uniform_memory = std::vector<std::vector<VkDeviceMemory>>(
-        descriptors.size(), std::vector<VkDeviceMemory>(max_objects)
-    );
     frame_data.m_descriptor_sets = std::vector<VkDescriptorSet>(max_objects);
 
-    std::vector<VkDescriptorPoolSize> descriptor_pool_sizes(7 + descriptors.size());
+    std::array<VkDescriptorPoolSize, 7> descriptor_pool_sizes = {};
     descriptor_pool_sizes[0].descriptorCount = max_objects;
     descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptor_pool_sizes[1].descriptorCount = max_objects;
@@ -284,10 +277,6 @@ FrameData create_frame_data(
     for(size_t i = 2; i < 7; ++i) {
         descriptor_pool_sizes[i].descriptorCount = max_objects;
         descriptor_pool_sizes[i].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    }
-    for(size_t i = 0; i < descriptors.size(); ++i) {
-        descriptor_pool_sizes[7 + i].descriptorCount = max_objects;
-        descriptor_pool_sizes[7 + i].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     }
     VkDescriptorPoolCreateInfo descriptor_pool_create_info = {};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -318,19 +307,6 @@ FrameData create_frame_data(
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             frame_data.m_material_uniform_buffers[i]
         );
-
-        for(size_t j = 0; j < descriptors.size(); ++j) {
-            frame_data.m_uniform_buffers[j][i] = create_buffer(
-                device,
-                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                descriptors[j].size
-            );
-            frame_data.m_uniform_memory[j][i] = allocate_buffer_memory(
-                device, physical_device,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                frame_data.m_uniform_buffers[j][i]
-            );
-        }
     }
 
     std::vector<VkDescriptorSetLayout> descriptor_set_layouts(max_objects, descriptor_set_layout);
@@ -402,9 +378,7 @@ void update_frame_data(
     const std::vector<Object*>& objects,
     const std::vector<Model>& models,
     glm::mat4 view_matrix,
-    glm::mat4 projection_matrix,
-    const std::vector<Descriptor>& descriptors,
-    const std::vector<void*>& descr_write_data
+    glm::mat4 projection_matrix
 ) {
     size_t descriptor_index = 0;
     for(size_t i = 0; i < objects.size(); ++i) {
@@ -469,14 +443,7 @@ void update_frame_data(
             descriptor_image_infos[3].imageView = roughness_view;
             descriptor_image_infos[4].imageView = emission_view;
 
-            std::vector<VkDescriptorBufferInfo> descr_buffer_infos(descriptors.size());
-            for(size_t i = 0; i < descriptors.size(); ++i) {
-                descr_buffer_infos[i].buffer = frame_data->m_uniform_buffers[i][descriptor_index];
-                descr_buffer_infos[i].range = descriptors[i].size;
-                descr_buffer_infos[i].offset = 0;
-            }
-
-            std::vector<VkWriteDescriptorSet> descriptor_set_writes(7 + descriptors.size());
+            std::array<VkWriteDescriptorSet, 7> descriptor_set_writes = {};
             descriptor_set_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_set_writes[0].descriptorCount = 1;
             descriptor_set_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -499,15 +466,6 @@ void update_frame_data(
                 descriptor_set_writes[2 + i].dstBinding = 2 + i;
                 descriptor_set_writes[2 + i].dstArrayElement = 0;
                 descriptor_set_writes[2 + i].pImageInfo = &descriptor_image_infos[i];
-            }
-            for(size_t i = 0; i < descriptors.size(); ++i) {
-                descriptor_set_writes[7 + i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                descriptor_set_writes[7 + i].descriptorCount = 1;
-                descriptor_set_writes[7 + i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-                descriptor_set_writes[7 + i].dstSet = frame_data->m_descriptor_sets[descriptor_index];
-                descriptor_set_writes[7 + i].dstBinding = 7 + i;
-                descriptor_set_writes[7 + i].dstArrayElement = 0;
-                descriptor_set_writes[7 + i].pBufferInfo = &descr_buffer_infos[i];
             }
             vkUpdateDescriptorSets(
                 device,
@@ -546,22 +504,6 @@ void update_frame_data(
 
             vkUnmapMemory(device, frame_data->m_material_uniform_memory[descriptor_index]);
 
-            for(size_t k = 0; k < descr_write_data.size(); ++k) {
-                void* mapping_data;
-                vkMapMemory(
-                    device,
-                    frame_data->m_uniform_memory[k][descriptor_index],
-                    0,
-                    descriptors[k].size,
-                    0,
-                    (void**)&mapping_data
-                );
-
-                memcpy(mapping_data, descr_write_data[k], descriptors[k].size);
-
-                vkUnmapMemory(device, frame_data->m_uniform_memory[k][descriptor_index]);
-            }
-
             descriptor_index++;
         }
     }
@@ -584,22 +526,15 @@ void destroy_frame_data(
     for(auto um : frame_data.m_material_uniform_memory) {
         vkFreeMemory(device, um, nullptr);
     }
-    for(auto ubs : frame_data.m_uniform_buffers) {
-        for(auto ub : ubs) vkDestroyBuffer(device, ub, nullptr);
-    }
-    for(auto ums : frame_data.m_uniform_memory) {
-        for(auto um : ums) vkFreeMemory(device, um, nullptr);
-    }
     vkDestroyImage(device, frame_data.m_empty_image, nullptr);
     vkFreeMemory(device, frame_data.m_empty_image_memory, nullptr);
     vkDestroyImageView(device, frame_data.m_empty_image_view, nullptr);
 }
 
 VkDescriptorSetLayout create_model_descriptor_set_layout(
-    VkDevice device,
-    const std::vector<Descriptor>& descriptors
+    VkDevice device
 ) {
-    std::vector<VkDescriptorSetLayoutBinding> bindings(7 + descriptors.size());
+    std::vector<VkDescriptorSetLayoutBinding> bindings(7);
     bindings[0].binding = 0;
     bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -620,14 +555,6 @@ VkDescriptorSetLayout create_model_descriptor_set_layout(
         bindings[2 + i].pImmutableSamplers = nullptr;
     }
 
-    for(size_t i = 0; i < descriptors.size(); ++i) {
-        bindings[7 + i].binding = 7 + i;
-        bindings[7 + i].stageFlags = descriptors[i].stage_flags;
-        bindings[7 + i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        bindings[7 + i].descriptorCount = 1;
-        bindings[7 + i].pImmutableSamplers = nullptr;
-    }
-
     return create_descriptor_set_layout(
         device,
         bindings
@@ -643,19 +570,19 @@ std::pair<
     binding_description.stride = 8 * sizeof(float);
     binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    VkVertexInputAttributeDescription position_attribute;
+    VkVertexInputAttributeDescription position_attribute = {};
     position_attribute.binding = 0;
     position_attribute.location = 0;
     position_attribute.offset = 0;
     position_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
 
-    VkVertexInputAttributeDescription normal_attribute;
+    VkVertexInputAttributeDescription normal_attribute = {};
     normal_attribute.binding = 0;
     normal_attribute.location = 1;
     normal_attribute.offset = 3 * sizeof(float);
     normal_attribute.format = VK_FORMAT_R32G32B32_SFLOAT;
 
-    VkVertexInputAttributeDescription uv_attribute;
+    VkVertexInputAttributeDescription uv_attribute = {};
     uv_attribute.binding = 0;
     uv_attribute.location = 2;
     uv_attribute.offset = 6 * sizeof(float);

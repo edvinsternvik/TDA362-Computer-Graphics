@@ -28,6 +28,19 @@ void write_memory_mapped(VkDevice device, VkDeviceMemory memory, T data) {
     vkUnmapMemory(device, memory);
 }
 
+struct DescriptorInfo {
+    uint32_t binding;
+    VkDescriptorType type;
+    VkShaderStageFlags stage_flags;
+};
+
+void create_descriptors(
+    VkDevice device,
+    VkDescriptorPool* descriptor_pool,
+    VkDescriptorSetLayout* descriptor_set_layout, VkDescriptorSet* descriptor_set,
+    const std::vector<DescriptorInfo>& descriptor_info
+);
+
 struct Texture {
     void destroy(VkDevice device);
 

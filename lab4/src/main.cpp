@@ -128,10 +128,40 @@ int main() {
     light_pos_descr.stage_flags = VK_SHADER_STAGE_FRAGMENT_BIT;
     light_pos_descr.size = sizeof(glm::vec3);
 
-    std::vector<Descriptor> descriptors = { light_pos_descr };
+    VkDescriptorPool extra_descriptor_pool;
+    VkDescriptorSetLayout extra_descriptor_set_layout;
+    VkDescriptorSet extra_descriptor_set;
+    create_descriptors(
+        vk_device,
+        &extra_descriptor_pool,
+        &extra_descriptor_set_layout, &extra_descriptor_set,
+        {
+            { 7, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT }
+        }
+    );
+
+    VkBuffer extra_ubo_buffer = create_buffer(
+        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(glm::vec3)
+    );
+    VkDeviceMemory extra_ubo_memory = allocate_buffer_memory(vk_device, physical_device, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, extra_ubo_buffer);
+
+    VkDescriptorBufferInfo extra_ubo_descriptor_info = {};
+    extra_ubo_descriptor_info.range = sizeof(glm::vec3);
+    extra_ubo_descriptor_info.buffer = extra_ubo_buffer;
+    extra_ubo_descriptor_info.offset = 0;
+
+    std::array<VkWriteDescriptorSet, 1> extra_descriptor_writes = {};
+    extra_descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    extra_descriptor_writes[0].descriptorCount = 1;
+    extra_descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    extra_descriptor_writes[0].dstSet = extra_descriptor_set;
+    extra_descriptor_writes[0].dstBinding = 7;
+    extra_descriptor_writes[0].dstArrayElement = 0;
+    extra_descriptor_writes[0].pBufferInfo = &extra_ubo_descriptor_info;
+    vkUpdateDescriptorSets(vk_device, extra_descriptor_writes.size(), extra_descriptor_writes.data(), 0, nullptr);
 
     VkDescriptorSetLayout material_descriptor_set_layout =
-        create_model_descriptor_set_layout(vk_device, descriptors);
+        create_model_descriptor_set_layout(vk_device);
 
     // Specify vertex data description
     auto model_attributes = create_model_attributes();
@@ -149,7 +179,7 @@ int main() {
     // Pipeline
     VkPipelineLayout material_pipeline_layout = create_pipeline_layout(
         vk_device,
-        { material_descriptor_set_layout }
+        { material_descriptor_set_layout, extra_descriptor_set_layout }
     );
 
     VkPipeline material_pipeline = create_graphics_pipeline(
@@ -190,45 +220,18 @@ int main() {
     );
     
     // 
-    VkDescriptorSetLayoutBinding bg_ubo_binding = {};
-    bg_ubo_binding.binding = 0;
-    bg_ubo_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bg_ubo_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bg_ubo_binding.descriptorCount = 1;
-    bg_ubo_binding.pImmutableSamplers = nullptr;
-    VkDescriptorSetLayoutBinding bg_sampler_binding = {};
-    bg_sampler_binding.binding = 1;
-    bg_sampler_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-    bg_sampler_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bg_sampler_binding.descriptorCount = 1;
-    bg_sampler_binding.pImmutableSamplers = nullptr;
-    VkDescriptorSetLayout bg_descriptor_set_layout = create_descriptor_set_layout(
-        vk_device,
-        { bg_ubo_binding, bg_sampler_binding }
-    );
-
-    std::array<VkDescriptorPoolSize, 2> bg_descriptor_pool_sizes;
-    bg_descriptor_pool_sizes[0].descriptorCount = 1;
-    bg_descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bg_descriptor_pool_sizes[1].descriptorCount = 1;
-    bg_descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-
-    VkDescriptorPoolCreateInfo bg_descriptor_pool_info = {};
-    bg_descriptor_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    bg_descriptor_pool_info.maxSets = 1;
-    bg_descriptor_pool_info.poolSizeCount = bg_descriptor_pool_sizes.size();
-    bg_descriptor_pool_info.pPoolSizes = bg_descriptor_pool_sizes.data();
-
     VkDescriptorPool bg_descriptor_pool;
-    vkCreateDescriptorPool(vk_device, &bg_descriptor_pool_info, nullptr, &bg_descriptor_pool);
-
-    VkDescriptorSetAllocateInfo bg_descriptor_set_info = {};
-    bg_descriptor_set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    bg_descriptor_set_info.descriptorPool = bg_descriptor_pool;
-    bg_descriptor_set_info.descriptorSetCount = 1;
-    bg_descriptor_set_info.pSetLayouts = &bg_descriptor_set_layout;
+    VkDescriptorSetLayout bg_descriptor_set_layout;
     VkDescriptorSet bg_descriptor_set;
-    vkAllocateDescriptorSets(vk_device, &bg_descriptor_set_info, &bg_descriptor_set);
+    create_descriptors(
+        vk_device,
+        &bg_descriptor_pool,
+        &bg_descriptor_set_layout, &bg_descriptor_set,
+        {
+            { 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT },
+            { 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT }
+        }
+    );
 
     // Pipeline
     VkPipelineLayout bg_pipeline_layout = create_pipeline_layout(
@@ -385,8 +388,7 @@ int main() {
             vk_device, physical_device, command_pool,
             graphics_queue,
             material_descriptor_set_layout,
-            100,
-            descriptors
+            100
         );
 
         update_frame_data(
@@ -396,8 +398,7 @@ int main() {
             objects,
             models,
             view_matrix,
-            projection_matrix,
-            descriptors, { (void*)&view_space_light_pos }
+            projection_matrix
         );
     }
 
@@ -421,8 +422,7 @@ int main() {
             vk_device,
             &frame_data[current_frame],
             sampler, objects, models,
-            view_matrix, projection_matrix,
-            descriptors, { (void*)&view_space_light_pos }
+            view_matrix, projection_matrix
         );
 
         VkCommandBufferBeginInfo begin_info = {};
@@ -476,6 +476,15 @@ int main() {
 
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material_pipeline);
 
+        vkCmdBindDescriptorSets(
+            command_buffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            material_pipeline_layout,
+            1, 1,
+            &extra_descriptor_set,
+            0, nullptr
+        );
+
         size_t descriptor_index = 0;
         for(const Object* object : objects) {
             const Model& model = models[object->m_model_index];
@@ -490,7 +499,6 @@ int main() {
                     &frame_data[current_frame].m_descriptor_sets[descriptor_index],
                     0, nullptr
                 );
-
                 vkCmdDraw(command_buffer, mesh.m_num_vertices, 1, mesh.m_start_index, 0);
 
                 descriptor_index++;
@@ -614,8 +622,9 @@ int main() {
             spaceship_object.orientation, 0.25f * delta_time, world_up
         );
 
-        /* light_pos = glm::rotate(glm::identity<glm::quat>(), delta_time * 10.0f, world_up) * light_pos; */
+        light_object.position = glm::rotate(glm::identity<glm::quat>(), delta_time * 10.0f, world_up) * light_object.position;
         view_space_light_pos = view_matrix * glm::vec4(light_object.position, 1.0f);
+        write_memory_mapped(vk_device, extra_ubo_memory, view_space_light_pos);
 
         bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
         bg_ubo.camera_pos = camera_position;
@@ -698,6 +707,10 @@ int main() {
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
+    vkDestroyDescriptorSetLayout(vk_device, extra_descriptor_set_layout, nullptr);
+    vkDestroyDescriptorPool(vk_device, extra_descriptor_pool, nullptr);
+    vkDestroyBuffer(vk_device, extra_ubo_buffer, nullptr);
+    vkFreeMemory(vk_device, extra_ubo_memory, nullptr);
     vkDestroyDescriptorSetLayout(vk_device, bg_descriptor_set_layout, nullptr);
     vkDestroyPipeline(vk_device, bg_pipeline, nullptr);
     vkDestroyPipelineLayout(vk_device, bg_pipeline_layout, nullptr);

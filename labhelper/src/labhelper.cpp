@@ -25,6 +25,48 @@ const std::array<const char*, 1> DEVICE_EXTENSIONS = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
+void create_descriptors(
+    VkDevice device,
+    VkDescriptorPool* descriptor_pool,
+    VkDescriptorSetLayout* descriptor_set_layout, VkDescriptorSet* descriptor_set,
+    const std::vector<DescriptorInfo>& descriptor_info
+) {
+    std::vector<VkDescriptorSetLayoutBinding> bindings(descriptor_info.size());
+    for(size_t i = 0; i < descriptor_info.size(); ++i) {
+        bindings[i] = {};
+        bindings[i].binding = descriptor_info[i].binding;
+        bindings[i].stageFlags = descriptor_info[i].stage_flags;
+        bindings[i].descriptorType = descriptor_info[i].type;
+        bindings[i].descriptorCount = 1;
+        bindings[i].pImmutableSamplers = nullptr;
+    }
+    *descriptor_set_layout = create_descriptor_set_layout(
+        device,
+        bindings
+    );
+
+    std::vector<VkDescriptorPoolSize> descriptor_pool_sizes(descriptor_info.size());
+    for(size_t i = 0; i < descriptor_info.size(); ++i) {
+        descriptor_pool_sizes[i].descriptorCount = 1;
+        descriptor_pool_sizes[i].type = descriptor_info[i].type;
+    }
+
+    VkDescriptorPoolCreateInfo descriptor_pool_info = {};
+    descriptor_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    descriptor_pool_info.maxSets = 1;
+    descriptor_pool_info.poolSizeCount = descriptor_pool_sizes.size();
+    descriptor_pool_info.pPoolSizes = descriptor_pool_sizes.data();
+
+    vkCreateDescriptorPool(device, &descriptor_pool_info, nullptr, descriptor_pool);
+
+    VkDescriptorSetAllocateInfo descriptor_set_info = {};
+    descriptor_set_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    descriptor_set_info.descriptorPool = *descriptor_pool;
+    descriptor_set_info.descriptorSetCount = 1;
+    descriptor_set_info.pSetLayouts = descriptor_set_layout;
+    vkAllocateDescriptorSets(device, &descriptor_set_info, descriptor_set);
+}
+
 void Texture::destroy(VkDevice device) {
     vkDestroyImage(device, m_image, nullptr);
     vkDestroyImageView(device, m_image_view, nullptr);

@@ -19,7 +19,7 @@ layout(binding = 4) uniform sampler2D fresnel_sampler;
 layout(binding = 5) uniform sampler2D roughness_sampler;
 layout(binding = 6) uniform sampler2D emission_sampler;
 
-layout(binding = 7) uniform LightUBO {
+layout(set = 1, binding = 7) uniform LightUBO {
     vec3 view_position;
 } ubo_light;
 

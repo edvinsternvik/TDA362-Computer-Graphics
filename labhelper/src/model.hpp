@@ -64,8 +64,6 @@ struct FrameData {
     std::vector<VkBuffer> m_material_uniform_buffers;
     std::vector<VkDeviceMemory> m_material_uniform_memory;
     std::vector<VkDescriptorSet> m_descriptor_sets;
-    std::vector<std::vector<VkBuffer>> m_uniform_buffers;
-    std::vector<std::vector<VkDeviceMemory>> m_uniform_memory;
     VkImage m_empty_image;
     VkDeviceMemory m_empty_image_memory;
     VkImageView m_empty_image_view;
@@ -81,8 +79,7 @@ FrameData create_frame_data(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
     VkDescriptorSetLayout descriptor_set_layout,
-    const size_t max_objects,
-    const std::vector<Descriptor>& descriptors
+    const size_t max_objects
 );
 
 void update_frame_data(
@@ -92,9 +89,7 @@ void update_frame_data(
     const std::vector<Object*>& objects,
     const std::vector<Model>& models,
     glm::mat4 view_matrix,
-    glm::mat4 projection_matrix,
-    const std::vector<Descriptor>& descriptors,
-    const std::vector<void*>& descr_write_data
+    glm::mat4 projection_matrix
 );
 
 void destroy_frame_data(
@@ -103,8 +98,7 @@ void destroy_frame_data(
 );
 
 VkDescriptorSetLayout create_model_descriptor_set_layout(
-    VkDevice device,
-    const std::vector<Descriptor>& descriptors
+    VkDevice device
 );
 
 std::pair<
