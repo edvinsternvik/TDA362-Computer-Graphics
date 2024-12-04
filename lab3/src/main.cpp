@@ -83,7 +83,7 @@ int main() {
 
     // Specify descriptors
     VkDescriptorSetLayout descriptor_set_layout =
-        create_model_descriptor_set_layout(vk_device, {});
+        create_model_descriptor_set_layout(vk_device);
 
     // Specify vertex data description
     auto model_attributes = create_model_attributes();
@@ -191,8 +191,7 @@ int main() {
             vk_device, physical_device, command_pool,
             graphics_queue,
             descriptor_set_layout,
-            100,
-            {}
+            100
         );
 
         update_frame_data(
@@ -200,8 +199,7 @@ int main() {
             &frame_data[i],
             sampler,
             objects, models,
-            view_matrix, projection_matrix,
-            {}, {}
+            view_matrix, projection_matrix
         );
     }
 
@@ -225,8 +223,7 @@ int main() {
             &frame_data[current_frame],
             sampler,
             objects, models,
-            view_matrix, projection_matrix,
-            {}, {}
+            view_matrix, projection_matrix
         );
 
         VkCommandBufferBeginInfo begin_info = {};
