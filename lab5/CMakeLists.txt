@@ -34,8 +34,20 @@ add_custom_command(
     DEPENDS src/bg_shader.frag
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/lab5"
 )
+add_custom_command(
+    OUTPUT postfx_vert.spv
+    COMMAND glslc src/postfx_shader.vert -o postfx_vert.spv
+    DEPENDS src/postfx_shader.vert
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/lab5"
+)
+add_custom_command(
+    OUTPUT postfx_frag.spv
+    COMMAND glslc src/postfx_shader.frag -o postfx_frag.spv
+    DEPENDS src/postfx_shader.frag
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/lab5"
+)
 add_custom_target(generate_shaders_lab5
-    DEPENDS vert.spv frag.spv bg_vert.spv bg_frag.spv
+    DEPENDS vert.spv frag.spv bg_vert.spv bg_frag.spv postfx_vert.spv postfx_frag.spv
 )
 
 add_dependencies(lab5 generate_shaders_lab5)

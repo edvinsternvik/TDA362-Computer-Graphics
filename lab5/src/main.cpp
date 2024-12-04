@@ -118,6 +118,68 @@ int main() {
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
+    // Main framebuffers
+    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> main_framebuffers;
+    std::array<VkImage, MAX_FRAMES_IN_FLIGHT> main_color_images;
+    std::array<VkImage, MAX_FRAMES_IN_FLIGHT> main_depth_images;
+    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> main_color_memory;
+    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> main_depth_memory;
+    std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> main_color_views;
+    std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> main_depth_views;
+    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        VkExtent2D extent = surface_info.capabilities.currentExtent;
+
+        main_color_images[i] = create_image(
+            vk_device,
+            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            VK_FORMAT_B8G8R8A8_SRGB,
+            VK_IMAGE_TILING_OPTIMAL,
+            extent.width, extent.height, 1
+        );
+        main_color_memory[i] = allocate_image_memory(
+            vk_device, physical_device,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            main_color_images[i]
+        );
+        VkImageViewCreateInfo view_create_info = {};
+        view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        view_create_info.image = main_color_images[i];
+        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_create_info.format = VK_FORMAT_B8G8R8A8_SRGB;
+        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        view_create_info.subresourceRange.baseMipLevel = 0;
+        view_create_info.subresourceRange.levelCount = 1;
+        view_create_info.subresourceRange.baseArrayLayer = 0;
+        view_create_info.subresourceRange.layerCount = 1;
+        vkCreateImageView(vk_device, &view_create_info, nullptr, &main_color_views[i]);
+        transition_image_layout(
+            vk_device,
+            command_pool,
+            graphics_queue,
+            main_color_images[i],
+            VK_FORMAT_B8G8R8A8_SRGB,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            1
+        );
+
+        create_depth_buffer(
+            vk_device, physical_device,
+            command_pool, graphics_queue,
+            extent.width, extent.height,
+            &main_depth_images[i],
+            &main_depth_memory[i],
+            &main_depth_views[i]
+        );
+
+        main_framebuffers[i] = create_framebuffer(
+            vk_device,
+            render_pass,
+            main_color_views[i], main_depth_views[i],
+            extent
+        );
+    }
+
     // Security camera framebuffers
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> security_framebuffers;
     std::array<VkImage, MAX_FRAMES_IN_FLIGHT> security_camera_color_images;
@@ -311,8 +373,8 @@ int main() {
     auto model_attributes = create_model_attributes();
 
     // Shader
-    std::vector<char> material_vert_shader_src = read_file("lab4/vert.spv");
-    std::vector<char> material_frag_shader_src = read_file("lab4/frag.spv");
+    std::vector<char> material_vert_shader_src = read_file("lab5/vert.spv");
+    std::vector<char> material_frag_shader_src = read_file("lab5/frag.spv");
     VkShaderModule material_vert_shader_module = create_shader_module(
         vk_device, material_vert_shader_src
     );
@@ -339,23 +401,45 @@ int main() {
     vkDestroyShaderModule(vk_device, material_vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, material_frag_shader_module, nullptr);
 
+    // Create quad
+    VkVertexInputBindingDescription quad_binding_description = {};
+    quad_binding_description.binding = 0;
+    quad_binding_description.stride = 2 * sizeof(float);
+    quad_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription quad_position_attribute;
+    quad_position_attribute.binding = 0;
+    quad_position_attribute.location = 0;
+    quad_position_attribute.offset = 0;
+    quad_position_attribute.format = VK_FORMAT_R32G32_SFLOAT;
+
+    std::array<float, 6 * 2> quad_vertices = {
+        -1.0,  1.0,   1.0,  1.0,   1.0, -1.0,
+         1.0, -1.0,  -1.0, -1.0,  -1.0,  1.0
+    };
+
+    VkBuffer quad_vertex_buffer = create_buffer(
+        vk_device,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        quad_vertices.size() * sizeof(float)
+    );
+    VkDeviceMemory quad_vertex_memory = allocate_buffer_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        quad_vertex_buffer
+    );
+    write_buffer_staged(
+        vk_device, physical_device,
+        graphics_queue, command_pool,
+        quad_vertex_buffer,
+        quad_vertices.data(), quad_vertices.size() * sizeof(float)
+    );
+
     // Background render pipeline
 
-    //
-    VkVertexInputBindingDescription bg_binding_description = {};
-    bg_binding_description.binding = 0;
-    bg_binding_description.stride = 2 * sizeof(float);
-    bg_binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    VkVertexInputAttributeDescription bg_position_attribute;
-    bg_position_attribute.binding = 0;
-    bg_position_attribute.location = 0;
-    bg_position_attribute.offset = 0;
-    bg_position_attribute.format = VK_FORMAT_R32G32_SFLOAT;
-
     // Shader
-    std::vector<char> bg_vert_shader_src = read_file("lab4/bg_vert.spv");
-    std::vector<char> bg_frag_shader_src = read_file("lab4/bg_frag.spv");
+    std::vector<char> bg_vert_shader_src = read_file("lab5/bg_vert.spv");
+    std::vector<char> bg_frag_shader_src = read_file("lab5/bg_frag.spv");
     VkShaderModule bg_vert_shader_module = create_shader_module(
         vk_device, bg_vert_shader_src
     );
@@ -363,29 +447,6 @@ int main() {
         vk_device, bg_frag_shader_src
     );
 
-    // Load background
-    std::array<float, 6 * 2> bg_vertices = {
-        -1.0,  1.0,   1.0,  1.0,   1.0, -1.0,
-         1.0, -1.0,  -1.0, -1.0,  -1.0,  1.0
-    };
-
-    VkBuffer bg_vertex_buffer = create_buffer(
-        vk_device,
-        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        bg_vertices.size() * sizeof(float)
-    );
-    VkDeviceMemory bg_vertex_memory = allocate_buffer_memory(
-        vk_device, physical_device,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        bg_vertex_buffer
-    );
-    write_buffer_staged(
-        vk_device, physical_device,
-        graphics_queue, command_pool,
-        bg_vertex_buffer,
-        bg_vertices.data(), bg_vertices.size() * sizeof(float)
-    );
-    
     // Descriptors
     struct BgUniformBlock {
         glm::mat4 inv_pv;
@@ -448,8 +509,8 @@ int main() {
         vk_device,
         bg_pipeline_layout,
         render_pass,
-        { bg_binding_description },
-        { bg_position_attribute },
+        { quad_binding_description },
+        { quad_position_attribute },
         bg_vert_shader_module,
         bg_frag_shader_module,
         bg_depth_stencil
@@ -457,6 +518,90 @@ int main() {
 
     vkDestroyShaderModule(vk_device, bg_vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, bg_frag_shader_module, nullptr);
+
+    // Post processing render pipeline
+
+    // Shader
+    std::vector<char> postfx_vert_shader_src = read_file("lab5/postfx_vert.spv");
+    std::vector<char> postfx_frag_shader_src = read_file("lab5/postfx_frag.spv");
+    VkShaderModule postfx_vert_shader_module = create_shader_module(
+        vk_device, postfx_vert_shader_src
+    );
+    VkShaderModule postfx_frag_shader_module = create_shader_module(
+        vk_device, postfx_frag_shader_src
+    );
+
+    // Descriptors
+    struct PostFXUniformBlock {
+        glm::mat4 inv_pv;
+        glm::vec3 camera_pos;
+        float environment_multiplier;
+    };
+
+    VkBuffer postfx_ubo_buffer = create_buffer(
+        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(PostFXUniformBlock)
+    );
+    VkDeviceMemory postfx_ubo_memory = allocate_buffer_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        postfx_ubo_buffer
+    );
+    std::vector<DescriptorInfo> postfx_descriptors = {
+        {
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::make_optional(postfx_ubo_buffer), std::make_optional(sizeof(PostFXUniformBlock)),
+            std::nullopt, std::nullopt
+        },
+        {
+            1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(main_color_views[0]), std::make_optional(sampler)
+        }
+    };
+
+    VkDescriptorPool postfx_descriptor_pool;
+    VkDescriptorSetLayout postfx_descriptor_set_layout;
+    VkDescriptorSet postfx_descriptor_set;
+    create_descriptors(
+        vk_device,
+        &postfx_descriptor_pool,
+        &postfx_descriptor_set_layout, &postfx_descriptor_set,
+        postfx_descriptors
+    );
+
+    update_descriptors(vk_device, postfx_descriptor_set, postfx_descriptors);
+
+    // Pipeline
+    VkPipelineLayout postfx_pipeline_layout = create_pipeline_layout(
+        vk_device,
+        { postfx_descriptor_set_layout }
+    );
+
+    VkPipelineDepthStencilStateCreateInfo postfx_depth_stencil = {};
+    postfx_depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    postfx_depth_stencil.depthTestEnable = VK_FALSE;
+    postfx_depth_stencil.depthWriteEnable = VK_FALSE;
+    postfx_depth_stencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    postfx_depth_stencil.depthBoundsTestEnable = VK_FALSE;
+    postfx_depth_stencil.minDepthBounds = 0.0f;
+    postfx_depth_stencil.maxDepthBounds = 1.0f;
+    postfx_depth_stencil.stencilTestEnable = VK_FALSE;
+    postfx_depth_stencil.front = {};
+    postfx_depth_stencil.back = {};
+
+    VkPipeline postfx_pipeline = create_graphics_pipeline(
+        vk_device,
+        postfx_pipeline_layout,
+        render_pass,
+        { quad_binding_description },
+        { quad_position_attribute },
+        postfx_vert_shader_module,
+        postfx_frag_shader_module,
+        postfx_depth_stencil
+    );
+
+    vkDestroyShaderModule(vk_device, postfx_vert_shader_module, nullptr);
+    vkDestroyShaderModule(vk_device, postfx_frag_shader_module, nullptr);
 
     // Load objects
     Model spaceship_model = load_model_from_file(
@@ -674,8 +819,8 @@ int main() {
             &bg_descriptor_set,
             0, nullptr
         );
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &bg_vertex_buffer, offsets);
-        vkCmdDraw(command_buffer, bg_vertices.size(), 1, 0, 0);
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &quad_vertex_buffer, offsets);
+        vkCmdDraw(command_buffer, quad_vertices.size(), 1, 0, 0);
 
         // Render scene
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material_pipeline);
@@ -749,7 +894,7 @@ int main() {
         render_pass_begin_info = {};
         render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         render_pass_begin_info.renderPass = render_pass;
-        render_pass_begin_info.framebuffer = framebuffers[image_index];
+        render_pass_begin_info.framebuffer = main_framebuffers[current_frame];
         render_pass_begin_info.renderArea.offset = {0, 0};
         render_pass_begin_info.renderArea.extent = surface_info.capabilities.currentExtent;
         render_pass_begin_info.clearValueCount = clear_values.size();
@@ -769,8 +914,8 @@ int main() {
             &bg_descriptor_set,
             0, nullptr
         );
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &bg_vertex_buffer, offsets);
-        vkCmdDraw(command_buffer, bg_vertices.size(), 1, 0, 0);
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &quad_vertex_buffer, offsets);
+        vkCmdDraw(command_buffer, quad_vertices.size(), 1, 0, 0);
 
         // Render scene
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material_pipeline);
@@ -804,6 +949,67 @@ int main() {
             }
         }
 
+        vkCmdEndRenderPass(command_buffer);
+        VK_HANDLE_ERROR(
+            vkEndCommandBuffer(command_buffer),
+            "Could not end command buffer"
+        );
+
+    };
+
+    auto render_post_processing = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
+        postfx_descriptors[1].image_view = main_color_views[current_frame];
+        update_descriptors(vk_device, postfx_descriptor_set, postfx_descriptors);
+
+        VkCommandBufferBeginInfo begin_info = {};
+        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        VK_HANDLE_ERROR(
+            vkBeginCommandBuffer(command_buffer, &begin_info),
+            "Could not begin command buffer"
+        );
+
+        std::array<VkClearValue, 2> clear_values = {};
+        clear_values[0].color = { clear_color.r, clear_color.g, clear_color.b, clear_color.a };
+        clear_values[1].depthStencil = { 1.0f, 0 };
+        VkViewport viewport = {};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = surface_info.capabilities.currentExtent.width;
+        viewport.height = surface_info.capabilities.currentExtent.height;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        VkRect2D scissor = {};
+        scissor.offset = { 0, 0 };
+        scissor.extent = surface_info.capabilities.currentExtent;
+        VkDeviceSize offsets[] = { 0 };
+
+        VkRenderPassBeginInfo render_pass_begin_info = {};
+        render_pass_begin_info = {};
+        render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        render_pass_begin_info.renderPass = render_pass;
+        render_pass_begin_info.framebuffer = framebuffers[image_index];
+        render_pass_begin_info.renderArea.offset = {0, 0};
+        render_pass_begin_info.renderArea.extent = surface_info.capabilities.currentExtent;
+        render_pass_begin_info.clearValueCount = clear_values.size();
+        render_pass_begin_info.pClearValues = clear_values.data();
+        vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, postfx_pipeline);
+
+        vkCmdBindDescriptorSets(
+            command_buffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            postfx_pipeline_layout,
+            0, 1,
+            &postfx_descriptor_set,
+            0, nullptr
+        );
+
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, &quad_vertex_buffer, offsets);
+        vkCmdDraw(command_buffer, quad_vertices.size(), 1, 0, 0);
+
         // Render GUI
         imgui_new_frame();
         ImGui::SliderFloat("Light intensity", &global_ubo.light_intensity, 0.0, 500.0);
@@ -817,7 +1023,6 @@ int main() {
             vkEndCommandBuffer(command_buffer),
             "Could not end command buffer"
         );
-
     };
 
     // Run application
@@ -973,6 +1178,26 @@ int main() {
         vkResetCommandBuffer(command_buffers[current_frame], 0);
         render_frame(command_buffers[current_frame], image_index, current_frame);
 
+        VK_HANDLE_ERROR(
+            vkQueueSubmit(graphics_queue, 1, &submit_info, nullptr),
+            "Could not submit queue"
+        );
+        vkDeviceWaitIdle(vk_device); // Too lazy to implement proper synchronization
+
+        transition_image_layout(
+            vk_device,
+            command_pool, graphics_queue,
+            main_color_images[current_frame],
+            VK_FORMAT_B8G8R8A8_SRGB,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            1
+        );
+
+        // Post processing
+        vkResetCommandBuffer(command_buffers[current_frame], 0);
+        render_post_processing(command_buffers[current_frame], image_index, current_frame);
+
         VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submit_info = {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1027,6 +1252,13 @@ int main() {
     for(auto& m : landingpad_model.m_materials) {
         if(m.m_name == "TV_Screen") m.m_emission_texture = {};
     }
+    for(auto fb : main_framebuffers) vkDestroyFramebuffer(vk_device, fb, nullptr);
+    for(auto im : main_color_images) vkDestroyImage(vk_device, im, nullptr);
+    for(auto im : main_depth_images) vkDestroyImage(vk_device, im, nullptr);
+    for(auto im : main_color_memory) vkFreeMemory(vk_device, im, nullptr);
+    for(auto im : main_depth_memory) vkFreeMemory(vk_device, im, nullptr);
+    for(auto iv : main_color_views) vkDestroyImageView(vk_device, iv, nullptr);
+    for(auto iv : main_depth_views) vkDestroyImageView(vk_device, iv, nullptr);
     for(auto fb : security_framebuffers) vkDestroyFramebuffer(vk_device, fb, nullptr);
     for(auto im : security_camera_color_images) vkDestroyImage(vk_device, im, nullptr);
     for(auto im : security_camera_depth_images) vkDestroyImage(vk_device, im, nullptr);
@@ -1038,14 +1270,20 @@ int main() {
     vkDestroyDescriptorPool(vk_device, global_descriptor_pool, nullptr);
     vkDestroyBuffer(vk_device, global_ubo_buffer, nullptr);
     vkFreeMemory(vk_device, global_ubo_memory, nullptr);
+    vkDestroyDescriptorSetLayout(vk_device, postfx_descriptor_set_layout, nullptr);
+    vkDestroyPipeline(vk_device, postfx_pipeline, nullptr);
+    vkDestroyPipelineLayout(vk_device, postfx_pipeline_layout, nullptr);
+    vkDestroyDescriptorPool(vk_device, postfx_descriptor_pool, nullptr);
+    vkDestroyBuffer(vk_device, postfx_ubo_buffer, nullptr);
+    vkFreeMemory(vk_device, postfx_ubo_memory, nullptr);
     vkDestroyDescriptorSetLayout(vk_device, bg_descriptor_set_layout, nullptr);
     vkDestroyPipeline(vk_device, bg_pipeline, nullptr);
     vkDestroyPipelineLayout(vk_device, bg_pipeline_layout, nullptr);
     vkDestroyDescriptorPool(vk_device, bg_descriptor_pool, nullptr);
     vkDestroyBuffer(vk_device, bg_ubo_buffer, nullptr);
     vkFreeMemory(vk_device, bg_ubo_memory, nullptr);
-    vkDestroyBuffer(vk_device, bg_vertex_buffer, nullptr);
-    vkFreeMemory(vk_device, bg_vertex_memory, nullptr);
+    vkDestroyBuffer(vk_device, quad_vertex_buffer, nullptr);
+    vkFreeMemory(vk_device, quad_vertex_memory, nullptr);
     env_map.destroy(vk_device);
     irradiance_map.destroy(vk_device);
     reflection_map.destroy(vk_device);
