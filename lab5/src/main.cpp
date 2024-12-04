@@ -533,9 +533,13 @@ int main() {
 
     // Descriptors
     struct PostFXUniformBlock {
-        glm::mat4 inv_pv;
-        glm::vec3 camera_pos;
-        float environment_multiplier;
+        float time;
+        int filter_size;
+        int enable_mushrooms;
+        int enable_mosaiac;
+        int enable_blur;
+        int enable_grayscale;
+        int enable_sepia;
     };
 
     VkBuffer postfx_ubo_buffer = create_buffer(
@@ -769,6 +773,16 @@ int main() {
     global_ubo.light_color = glm::vec3(1.0, 1.0, 1.0);
     global_ubo.light_intensity = 100.0;
     global_ubo.env_multiplier = 0.1;
+
+    PostFXUniformBlock postfx_ubo = {};
+    postfx_ubo.time = 0.0;
+    postfx_ubo.filter_size = 3;
+    postfx_ubo.enable_mushrooms = false;
+    postfx_ubo.enable_mosaiac = false;
+    postfx_ubo.enable_blur = false;
+    postfx_ubo.enable_grayscale = false;
+    postfx_ubo.enable_sepia = false;
+    write_memory_mapped(vk_device, postfx_ubo_memory, postfx_ubo);
 
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
@@ -1016,6 +1030,12 @@ int main() {
         ImGui::SliderFloat("Environment intensity", &global_ubo.env_multiplier, 0.0, 100.0);
         ImGui::SliderFloat("Environment multiplier", &bg_ubo.environment_multiplier, 0.0, 2.0);
         ImGui::ColorEdit3("Environment intensity", (float*)&global_ubo.light_color);
+        ImGui::Checkbox("Enable mushrooms", (bool*)&postfx_ubo.enable_mushrooms);
+        ImGui::Checkbox("Enable mosaiac", (bool*)&postfx_ubo.enable_mosaiac);
+        ImGui::Checkbox("Enable blur", (bool*)&postfx_ubo.enable_blur);
+        ImGui::SliderInt("Blur size", &postfx_ubo.filter_size, 1, 10);
+        ImGui::Checkbox("Enable grayscale", (bool*)&postfx_ubo.enable_grayscale);
+        ImGui::Checkbox("Enable sepia", (bool*)&postfx_ubo.enable_sepia);
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
@@ -1088,6 +1108,9 @@ int main() {
         bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
         bg_ubo.camera_pos = camera_position;
         write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
+
+        postfx_ubo.time = current_time.count();
+        write_memory_mapped(vk_device, postfx_ubo_memory, postfx_ubo);
 
         // Render frame
         vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
