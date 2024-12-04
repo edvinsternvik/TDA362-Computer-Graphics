@@ -87,7 +87,7 @@ void update_frame_data(
     FrameData* frame_data,
     VkSampler sampler,
     const std::vector<Object*>& objects,
-    const std::vector<Model>& models,
+    const std::vector<Model*>& models,
     glm::mat4 view_matrix,
     glm::mat4 projection_matrix
 );

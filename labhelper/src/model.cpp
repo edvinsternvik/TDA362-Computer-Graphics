@@ -376,13 +376,13 @@ void update_frame_data(
     FrameData* frame_data,
     VkSampler sampler,
     const std::vector<Object*>& objects,
-    const std::vector<Model>& models,
+    const std::vector<Model*>& models,
     glm::mat4 view_matrix,
     glm::mat4 projection_matrix
 ) {
     size_t descriptor_index = 0;
     for(size_t i = 0; i < objects.size(); ++i) {
-        const Model& model = models[objects[i]->m_model_index];
+        const Model& model = *models[objects[i]->m_model_index];
 
         glm::mat4 model_matrix = glm::identity<glm::mat4>()
             * glm::translate(glm::identity<glm::mat4>(), objects[i]->position)

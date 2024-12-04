@@ -157,8 +157,8 @@ int main() {
         vk_device, physical_device, command_pool, graphics_queue,
         "scenes/city.obj"
     );
-    std::vector<Model> models = {
-        city_model, car_model
+    std::vector<Model*> models = {
+        &city_model, &car_model
     };
 
     Object city_object = {};
@@ -266,7 +266,7 @@ int main() {
 
         size_t descriptor_index = 0;
         for(const Object* object : objects) {
-            const Model& model = models[object->m_model_index];
+            const Model& model = *models[object->m_model_index];
             vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.m_vertex_buffer, offsets);
 
             for(const Mesh& mesh : model.m_meshes) {
@@ -479,7 +479,7 @@ int main() {
     // Clean up
     imgui_cleanup(vk_device, imgui_descriptor_pool);
     for(auto& fd : frame_data) destroy_frame_data(vk_device, fd);
-    for(auto& model : models) model.destroy(vk_device);
+    for(auto& model : models) model->destroy(vk_device);
     vkDestroyDescriptorSetLayout(vk_device, descriptor_set_layout, nullptr);
     vkDestroySampler(vk_device, sampler, nullptr);
     for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);
