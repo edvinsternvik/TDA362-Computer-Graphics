@@ -239,6 +239,13 @@ VkFramebuffer create_framebuffer(
     VkExtent2D extent
 );
 
+void create_framebuffer_complete(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    VkRenderPass render_pass, VkExtent2D extent,
+    VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture
+);
+
 void recreate_swapchain(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,

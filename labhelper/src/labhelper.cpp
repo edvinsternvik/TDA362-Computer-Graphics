@@ -1202,6 +1202,71 @@ VkFramebuffer create_framebuffer(
     return framebuffer;
 }
 
+void create_framebuffer_complete(
+    VkDevice device, VkPhysicalDevice physical_device,
+    VkCommandPool command_pool, VkQueue command_queue,
+    VkRenderPass render_pass, VkExtent2D extent,
+    VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture
+) {
+    color_texture->m_width = extent.width;
+    color_texture->m_height = extent.height;
+    color_texture->m_channels = 4;
+    color_texture->m_mip_levels = 1;
+    color_texture->m_image = create_image(
+        device,
+        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        VK_FORMAT_B8G8R8A8_SRGB,
+        VK_IMAGE_TILING_OPTIMAL,
+        extent.width, extent.height, 1
+    );
+    color_texture->m_image_memory = allocate_image_memory(
+        device, physical_device,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        color_texture->m_image
+    );
+    VkImageViewCreateInfo view_create_info = {};
+    view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    view_create_info.image = color_texture->m_image;
+    view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    view_create_info.format = VK_FORMAT_B8G8R8A8_SRGB;
+    view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    view_create_info.subresourceRange.baseMipLevel = 0;
+    view_create_info.subresourceRange.levelCount = 1;
+    view_create_info.subresourceRange.baseArrayLayer = 0;
+    view_create_info.subresourceRange.layerCount = 1;
+    vkCreateImageView(device, &view_create_info, nullptr, &color_texture->m_image_view);
+    transition_image_layout(
+        device,
+        command_pool,
+        command_queue,
+        color_texture->m_image,
+        VK_FORMAT_B8G8R8A8_SRGB,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        1
+    );
+
+    depth_texture->m_width = extent.width;
+    depth_texture->m_height = extent.height;
+    depth_texture->m_channels = 4;
+    depth_texture->m_mip_levels = 1;
+    create_depth_buffer(
+        device, physical_device,
+        command_pool, command_queue,
+        extent.width, extent.height,
+        &depth_texture->m_image,
+        &depth_texture->m_image_memory,
+        &depth_texture->m_image_view
+    );
+
+    *framebuffer = create_framebuffer(
+        device,
+        render_pass,
+        color_texture->m_image_view, depth_texture->m_image_view,
+        extent
+    );
+}
+
 void recreate_swapchain(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,

@@ -120,125 +120,27 @@ int main() {
 
     // Main framebuffers
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> main_framebuffers;
-    std::array<VkImage, MAX_FRAMES_IN_FLIGHT> main_color_images;
-    std::array<VkImage, MAX_FRAMES_IN_FLIGHT> main_depth_images;
-    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> main_color_memory;
-    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> main_depth_memory;
-    std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> main_color_views;
-    std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> main_depth_views;
+    std::array<Texture, MAX_FRAMES_IN_FLIGHT> main_color_textures;
+    std::array<Texture, MAX_FRAMES_IN_FLIGHT> main_depth_textures;
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkExtent2D extent = surface_info.capabilities.currentExtent;
-
-        main_color_images[i] = create_image(
-            vk_device,
-            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            VK_FORMAT_B8G8R8A8_SRGB,
-            VK_IMAGE_TILING_OPTIMAL,
-            extent.width, extent.height, 1
-        );
-        main_color_memory[i] = allocate_image_memory(
-            vk_device, physical_device,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            main_color_images[i]
-        );
-        VkImageViewCreateInfo view_create_info = {};
-        view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_create_info.image = main_color_images[i];
-        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_create_info.format = VK_FORMAT_B8G8R8A8_SRGB;
-        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view_create_info.subresourceRange.baseMipLevel = 0;
-        view_create_info.subresourceRange.levelCount = 1;
-        view_create_info.subresourceRange.baseArrayLayer = 0;
-        view_create_info.subresourceRange.layerCount = 1;
-        vkCreateImageView(vk_device, &view_create_info, nullptr, &main_color_views[i]);
-        transition_image_layout(
-            vk_device,
-            command_pool,
-            graphics_queue,
-            main_color_images[i],
-            VK_FORMAT_B8G8R8A8_SRGB,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            1
-        );
-
-        create_depth_buffer(
+        create_framebuffer_complete(
             vk_device, physical_device,
             command_pool, graphics_queue,
-            extent.width, extent.height,
-            &main_depth_images[i],
-            &main_depth_memory[i],
-            &main_depth_views[i]
-        );
-
-        main_framebuffers[i] = create_framebuffer(
-            vk_device,
-            render_pass,
-            main_color_views[i], main_depth_views[i],
-            extent
+            render_pass, surface_info.capabilities.currentExtent,
+            &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
         );
     }
 
     // Security camera framebuffers
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> security_framebuffers;
-    std::array<VkImage, MAX_FRAMES_IN_FLIGHT> security_camera_color_images;
-    std::array<VkImage, MAX_FRAMES_IN_FLIGHT> security_camera_depth_images;
-    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> security_camera_color_memory;
-    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> security_camera_depth_memory;
-    std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> security_camera_color_views;
-    std::array<VkImageView, MAX_FRAMES_IN_FLIGHT> security_camera_depth_views;
+    std::array<Texture, MAX_FRAMES_IN_FLIGHT> security_color_textures;
+    std::array<Texture, MAX_FRAMES_IN_FLIGHT> security_depth_textures;
     for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        VkExtent2D extent = surface_info.capabilities.currentExtent;
-
-        security_camera_color_images[i] = create_image(
-            vk_device,
-            VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-            VK_FORMAT_B8G8R8A8_SRGB,
-            VK_IMAGE_TILING_OPTIMAL,
-            extent.width, extent.height, 1
-        );
-        security_camera_color_memory[i] = allocate_image_memory(
-            vk_device, physical_device,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            security_camera_color_images[i]
-        );
-        VkImageViewCreateInfo view_create_info = {};
-        view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_create_info.image = security_camera_color_images[i];
-        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_create_info.format = VK_FORMAT_B8G8R8A8_SRGB;
-        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view_create_info.subresourceRange.baseMipLevel = 0;
-        view_create_info.subresourceRange.levelCount = 1;
-        view_create_info.subresourceRange.baseArrayLayer = 0;
-        view_create_info.subresourceRange.layerCount = 1;
-        vkCreateImageView(vk_device, &view_create_info, nullptr, &security_camera_color_views[i]);
-        transition_image_layout(
-            vk_device,
-            command_pool,
-            graphics_queue,
-            security_camera_color_images[i],
-            VK_FORMAT_B8G8R8A8_SRGB,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            1
-        );
-
-        create_depth_buffer(
+        create_framebuffer_complete(
             vk_device, physical_device,
             command_pool, graphics_queue,
-            extent.width, extent.height,
-            &security_camera_depth_images[i],
-            &security_camera_depth_memory[i],
-            &security_camera_depth_views[i]
-        );
-
-        security_framebuffers[i] = create_framebuffer(
-            vk_device,
-            render_pass,
-            security_camera_color_views[i], security_camera_depth_views[i],
-            extent
+            render_pass, {640, 480},
+            &security_framebuffers[i], &security_color_textures[i], &security_depth_textures[i]
         );
     }
 
@@ -559,7 +461,7 @@ int main() {
         {
             1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
-            std::make_optional(main_color_views[0]), std::make_optional(sampler)
+            std::make_optional(main_color_textures[0].m_image_view), std::make_optional(sampler)
         }
     };
 
@@ -627,14 +529,7 @@ int main() {
     for(auto& m : landingpad_model.m_materials) {
         if(m.m_name == "TV_Screen") {
             m.m_emission_texture->destroy(vk_device);
-            m.m_emission_texture = Texture();
-            m.m_emission_texture->m_image = security_camera_color_images[0];
-            m.m_emission_texture->m_width = surface_info.capabilities.currentExtent.width;
-            m.m_emission_texture->m_height = surface_info.capabilities.currentExtent.height;
-            m.m_emission_texture->m_channels = 4;
-            m.m_emission_texture->m_image_view = security_camera_color_views[0];
-            m.m_emission_texture->m_mip_levels = 1;
-            m.m_emission_texture->m_image_memory = security_camera_color_memory[0];
+            m.m_emission_texture = security_color_textures[0];
         }
     }
     std::vector<Model*> models = {
@@ -797,16 +692,20 @@ int main() {
         std::array<VkClearValue, 2> clear_values = {};
         clear_values[0].color = { clear_color.r, clear_color.g, clear_color.b, clear_color.a };
         clear_values[1].depthStencil = { 1.0f, 0 };
+        VkExtent2D render_extent = {
+            static_cast<uint32_t>(security_color_textures[current_frame].m_width),
+            static_cast<uint32_t>(security_color_textures[current_frame].m_height)
+        }; 
         VkViewport viewport = {};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = surface_info.capabilities.currentExtent.width;
-        viewport.height = surface_info.capabilities.currentExtent.height;
+        viewport.width = render_extent.width;
+        viewport.height = render_extent.height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         VkRect2D scissor = {};
         scissor.offset = { 0, 0 };
-        scissor.extent = surface_info.capabilities.currentExtent;
+        scissor.extent = render_extent;
         VkDeviceSize offsets[] = { 0 };
 
         // Security camera render pass
@@ -815,7 +714,7 @@ int main() {
         render_pass_begin_info.renderPass = render_pass;
         render_pass_begin_info.framebuffer = security_framebuffers[current_frame];
         render_pass_begin_info.renderArea.offset = {0, 0};
-        render_pass_begin_info.renderArea.extent = surface_info.capabilities.currentExtent;
+        render_pass_begin_info.renderArea.extent = render_extent;
         render_pass_begin_info.clearValueCount = clear_values.size();
         render_pass_begin_info.pClearValues = clear_values.data();
         vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -892,16 +791,20 @@ int main() {
         std::array<VkClearValue, 2> clear_values = {};
         clear_values[0].color = { clear_color.r, clear_color.g, clear_color.b, clear_color.a };
         clear_values[1].depthStencil = { 1.0f, 0 };
+        VkExtent2D render_extent = {
+            static_cast<uint32_t>(main_color_textures[current_frame].m_width),
+            static_cast<uint32_t>(main_color_textures[current_frame].m_height)
+        }; 
         VkViewport viewport = {};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
-        viewport.width = surface_info.capabilities.currentExtent.width;
-        viewport.height = surface_info.capabilities.currentExtent.height;
+        viewport.width = render_extent.width;
+        viewport.height = render_extent.height;
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         VkRect2D scissor = {};
         scissor.offset = { 0, 0 };
-        scissor.extent = surface_info.capabilities.currentExtent;
+        scissor.extent = render_extent;
         VkDeviceSize offsets[] = { 0 };
 
         VkRenderPassBeginInfo render_pass_begin_info = {};
@@ -910,7 +813,7 @@ int main() {
         render_pass_begin_info.renderPass = render_pass;
         render_pass_begin_info.framebuffer = main_framebuffers[current_frame];
         render_pass_begin_info.renderArea.offset = {0, 0};
-        render_pass_begin_info.renderArea.extent = surface_info.capabilities.currentExtent;
+        render_pass_begin_info.renderArea.extent = render_extent;
         render_pass_begin_info.clearValueCount = clear_values.size();
         render_pass_begin_info.pClearValues = clear_values.data();
         vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
@@ -972,7 +875,7 @@ int main() {
     };
 
     auto render_post_processing = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
-        postfx_descriptors[1].image_view = main_color_views[current_frame];
+        postfx_descriptors[1].image_view = main_color_textures[current_frame].m_image_view;
         update_descriptors(vk_device, postfx_descriptor_set, postfx_descriptors);
 
         VkCommandBufferBeginInfo begin_info = {};
@@ -1132,6 +1035,17 @@ int main() {
                 graphics_family, present_family,
                 render_pass
             );
+            for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+                vkDestroyFramebuffer(vk_device, main_framebuffers[i], nullptr);
+                main_color_textures[i].destroy(vk_device);
+                main_depth_textures[i].destroy(vk_device);
+                create_framebuffer_complete(
+                    vk_device, physical_device,
+                    command_pool, graphics_queue,
+                    render_pass, surface_info.capabilities.currentExtent,
+                    &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
+                );
+            }
             continue;
         }
 
@@ -1142,9 +1056,7 @@ int main() {
         uint32_t prev_frame = (current_frame + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
         for(auto& m : landingpad_model.m_materials) {
             if(m.m_name == "TV_Screen") {
-                m.m_emission_texture->m_image = security_camera_color_images[prev_frame];
-                m.m_emission_texture->m_image_view = security_camera_color_views[prev_frame];
-                m.m_emission_texture->m_image_memory = security_camera_color_memory[prev_frame];
+                m.m_emission_texture = security_color_textures[prev_frame];
             }
         }
         update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, view_matrix, projection_matrix);
@@ -1152,7 +1064,7 @@ int main() {
         transition_image_layout(
             vk_device,
             command_pool, graphics_queue,
-            security_camera_color_images[current_frame],
+            security_color_textures[current_frame].m_image,
             VK_FORMAT_B8G8R8A8_SRGB,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
@@ -1180,7 +1092,7 @@ int main() {
         transition_image_layout(
             vk_device,
             command_pool, graphics_queue,
-            security_camera_color_images[current_frame],
+            security_color_textures[current_frame].m_image,
             VK_FORMAT_B8G8R8A8_SRGB,
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -1189,9 +1101,7 @@ int main() {
 
         for(auto& m : landingpad_model.m_materials) {
             if(m.m_name == "TV_Screen") {
-                m.m_emission_texture->m_image = security_camera_color_images[current_frame];
-                m.m_emission_texture->m_image_view = security_camera_color_views[current_frame];
-                m.m_emission_texture->m_image_memory = security_camera_color_memory[current_frame];
+                m.m_emission_texture = security_color_textures[current_frame];
             }
         }
         update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, view_matrix, projection_matrix);
@@ -1210,7 +1120,7 @@ int main() {
         transition_image_layout(
             vk_device,
             command_pool, graphics_queue,
-            main_color_images[current_frame],
+            main_color_textures[current_frame].m_image,
             VK_FORMAT_B8G8R8A8_SRGB,
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
             VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
@@ -1263,6 +1173,17 @@ int main() {
                 graphics_family, present_family,
                 render_pass
             );
+            for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+                vkDestroyFramebuffer(vk_device, main_framebuffers[i], nullptr);
+                main_color_textures[i].destroy(vk_device);
+                main_depth_textures[i].destroy(vk_device);
+                create_framebuffer_complete(
+                    vk_device, physical_device,
+                    command_pool, graphics_queue,
+                    render_pass, surface_info.capabilities.currentExtent,
+                    &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
+                );
+            }
             continue;
         }
 
@@ -1276,19 +1197,11 @@ int main() {
         if(m.m_name == "TV_Screen") m.m_emission_texture = {};
     }
     for(auto fb : main_framebuffers) vkDestroyFramebuffer(vk_device, fb, nullptr);
-    for(auto im : main_color_images) vkDestroyImage(vk_device, im, nullptr);
-    for(auto im : main_depth_images) vkDestroyImage(vk_device, im, nullptr);
-    for(auto im : main_color_memory) vkFreeMemory(vk_device, im, nullptr);
-    for(auto im : main_depth_memory) vkFreeMemory(vk_device, im, nullptr);
-    for(auto iv : main_color_views) vkDestroyImageView(vk_device, iv, nullptr);
-    for(auto iv : main_depth_views) vkDestroyImageView(vk_device, iv, nullptr);
+    for(auto t : main_color_textures) t.destroy(vk_device);
+    for(auto t : main_depth_textures) t.destroy(vk_device);
     for(auto fb : security_framebuffers) vkDestroyFramebuffer(vk_device, fb, nullptr);
-    for(auto im : security_camera_color_images) vkDestroyImage(vk_device, im, nullptr);
-    for(auto im : security_camera_depth_images) vkDestroyImage(vk_device, im, nullptr);
-    for(auto im : security_camera_color_memory) vkFreeMemory(vk_device, im, nullptr);
-    for(auto im : security_camera_depth_memory) vkFreeMemory(vk_device, im, nullptr);
-    for(auto iv : security_camera_color_views) vkDestroyImageView(vk_device, iv, nullptr);
-    for(auto iv : security_camera_depth_views) vkDestroyImageView(vk_device, iv, nullptr);
+    for(auto t : security_color_textures) t.destroy(vk_device);
+    for(auto t : security_depth_textures) t.destroy(vk_device);
     vkDestroyDescriptorSetLayout(vk_device, global_descriptor_set_layout, nullptr);
     vkDestroyDescriptorPool(vk_device, global_descriptor_pool, nullptr);
     vkDestroyBuffer(vk_device, global_ubo_buffer, nullptr);
