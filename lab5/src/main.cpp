@@ -558,10 +558,10 @@ int main() {
     light_object.m_model_index = 2;
 
     Object landingpad_object = {};
-    light_object.position = glm::vec3(0.0, 0.0, 0.0);
-    light_object.orientation = glm::identity<glm::quat>();
-    light_object.scale = glm::one<glm::vec3>();
-    light_object.m_model_index = 3;
+    landingpad_object.position = glm::vec3(0.0, 0.0, 0.0);
+    landingpad_object.orientation = glm::identity<glm::quat>();
+    landingpad_object.scale = glm::one<glm::vec3>();
+    landingpad_object.m_model_index = 3;
 
     std::vector<Object*> objects = {
         &spaceship_object,
