@@ -20,6 +20,7 @@ layout(binding = 5) uniform sampler2D roughness_sampler;
 layout(binding = 6) uniform sampler2D emission_sampler;
 
 layout(set = 1, binding = 0) uniform GlobalUBO {
+    mat4 light_matrix;
     mat4 view_inverse;
     vec3 light_view_pos;
     float light_intensity;
@@ -29,6 +30,7 @@ layout(set = 1, binding = 0) uniform GlobalUBO {
 layout(set = 1, binding = 1) uniform sampler2D env_sampler;
 layout(set = 1, binding = 2) uniform sampler2D irradiance_sampler;
 layout(set = 1, binding = 3) uniform sampler2D reflection_sampler;
+layout(set = 1, binding = 4) uniform sampler2D shadowmap_sampler;
 
 layout(location = 0) out vec4 out_color;
 
@@ -140,7 +142,11 @@ void main() {
         base_color *= tex_color.rgb;
     }
 
-    vec3 dir_elim_term = direct_illumination(wo, normal, base_color);
+    vec4 shadowmap_coords = light_matrix * vec4(in_position, 1.0);
+    float depth = texture(shadowmap_sampler, shadowmap_coords.xy / shadowmap_coords.w).x;
+    float visibility = (depth >= (shadowmap_coords.z / shadowmap_coords.w)) ? 1.0 : 0.0;
+
+    vec3 dir_elim_term = visibility * direct_illumination(wo, normal, base_color);
 
     vec3 emission_term = ubo_material.emission;
     vec4 tex_emission = texture(emission_sampler, in_uv);

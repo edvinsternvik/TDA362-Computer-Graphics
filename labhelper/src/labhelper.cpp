@@ -975,9 +975,9 @@ void transition_image_layout(
         }
     };
 
-    auto get_aspect = [](VkImageLayout layout, VkFormat format) {
+    auto get_aspect = [](VkImageLayout old_layout, VkImageLayout new_layout, VkFormat format) {
         VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT;
-        if(layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+        if(old_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL || new_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
             aspect_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
             if(format == VK_FORMAT_D32_SFLOAT_S8_UINT) aspect_mask |= VK_IMAGE_ASPECT_STENCIL_BIT;
             if(format == VK_FORMAT_D24_UNORM_S8_UINT) aspect_mask |= VK_IMAGE_ASPECT_STENCIL_BIT;
@@ -989,7 +989,7 @@ void transition_image_layout(
     VkAccessFlags dst_access = get_access_flag(new_layout);
     VkPipelineStageFlags src_stage = get_stage_flag(old_layout);
     VkPipelineStageFlags dst_stage = get_stage_flag(new_layout);
-    VkImageAspectFlags aspect_mask = get_aspect(new_layout, format);
+    VkImageAspectFlags aspect_mask = get_aspect(old_layout, new_layout, format);
 
     VkImageMemoryBarrier barrier = {};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1124,11 +1124,12 @@ void create_depth_buffer(
     uint32_t width, uint32_t height,
     VkImage* depth_image,
     VkDeviceMemory* depth_image_memory,
-    VkImageView* depth_image_view
+    VkImageView* depth_image_view,
+    VkImageUsageFlags usage_flags
 ) {
     VkImageCreateInfo depth_image_create_info = {};
     depth_image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    depth_image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    depth_image_create_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | usage_flags;
     depth_image_create_info.extent.width = width;
     depth_image_create_info.extent.height = height;
     depth_image_create_info.extent.depth = 1;
@@ -1206,7 +1207,7 @@ VkFramebuffer create_framebuffer(
 void create_framebuffer_complete(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
-    VkRenderPass render_pass, VkExtent2D extent,
+    VkRenderPass render_pass, VkExtent2D extent, VkImageUsageFlags image_usage,
     VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture
 ) {
     color_texture->m_width = extent.width;
@@ -1215,7 +1216,7 @@ void create_framebuffer_complete(
     color_texture->m_mip_levels = 1;
     color_texture->m_image = create_image(
         device,
-        VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | image_usage,
         VK_FORMAT_B8G8R8A8_SRGB,
         VK_IMAGE_TILING_OPTIMAL,
         extent.width, extent.height, 1
@@ -1257,7 +1258,8 @@ void create_framebuffer_complete(
         extent.width, extent.height,
         &depth_texture->m_image,
         &depth_texture->m_image_memory,
-        &depth_texture->m_image_view
+        &depth_texture->m_image_view,
+        image_usage
     );
 
     *framebuffer = create_framebuffer(

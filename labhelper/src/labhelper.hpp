@@ -228,7 +228,8 @@ void create_depth_buffer(
     uint32_t width, uint32_t height,
     VkImage* depth_image,
     VkDeviceMemory* depth_image_memory,
-    VkImageView* depth_image_view
+    VkImageView* depth_image_view,
+    VkImageUsageFlags usage_flags = 0
 );
 
 VkFramebuffer create_framebuffer(
@@ -242,7 +243,7 @@ VkFramebuffer create_framebuffer(
 void create_framebuffer_complete(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
-    VkRenderPass render_pass, VkExtent2D extent,
+    VkRenderPass render_pass, VkExtent2D extent, VkImageUsageFlags image_usage,
     VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture
 );
 

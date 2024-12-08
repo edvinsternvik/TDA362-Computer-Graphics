@@ -112,9 +112,9 @@ int main() {
     sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sampler_create_info.mipLodBias = 0.0f;
     sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     sampler_create_info.anisotropyEnable = VK_TRUE;
     sampler_create_info.maxAnisotropy = device_properties.limits.maxSamplerAnisotropy;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
@@ -128,7 +128,7 @@ int main() {
         create_framebuffer_complete(
             vk_device, physical_device,
             command_pool, graphics_queue,
-            render_pass, {640, 480},
+            render_pass, {1024, 1024}, VK_IMAGE_USAGE_SAMPLED_BIT,
             &shadowmap_framebuffers[i], &shadowmap_color_textures[i], &shadowmap_depth_textures[i]
         );
     }
@@ -206,6 +206,7 @@ int main() {
 
     // Specify descriptors
     struct GlobalUBO {
+        glm::mat4 light_matrix;
         glm::mat4 view_inverse;
         glm::vec3 view_space_light_position;
         float light_intensity;
@@ -242,6 +243,11 @@ int main() {
             3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
             std::make_optional(reflection_map.m_image_view), std::make_optional(sampler)
+        },
+        {
+            4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(shadowmap_depth_textures[0].m_image_view), std::make_optional(sampler)
         }
     };
 
@@ -472,7 +478,7 @@ int main() {
     };
 
     Object spaceship_object = {};
-    spaceship_object.position = glm::vec3(0.0, 0.0, 0.0);
+    spaceship_object.position = glm::vec3(0.0, 8.0, 0.0);
     spaceship_object.orientation = glm::identity<glm::quat>();
     spaceship_object.scale = glm::one<glm::vec3>();
     spaceship_object.m_model_index = 0;
@@ -602,10 +608,11 @@ int main() {
     write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
 
     GlobalUBO global_ubo = {};
+    global_ubo.light_matrix = glm::identity<glm::mat4>();
     global_ubo.view_inverse = glm::inverse(view_matrix);
     global_ubo.view_space_light_position = view_matrix * glm::vec4(light_object.position, 1.0);
     global_ubo.light_color = glm::vec3(1.0, 1.0, 1.0);
-    global_ubo.light_intensity = 100.0;
+    global_ubo.light_intensity = 800.0;
     global_ubo.env_multiplier = 0.1;
 
     // Record command buffer for frame rendering
@@ -849,9 +856,15 @@ int main() {
             light_object.position, glm::zero<glm::vec3>(), world_up
         );
         glm::mat4 light_projection_matrix = glm::perspective(
-            glm::radians(45.0f), 1.0f, 25.0f, 100.0f
+            glm::radians(45.0f), 1.0f, 20.0f, 100.0f
         );
         light_projection_matrix[1][1] *= -1.0;
+
+        global_ubo.light_matrix =
+            glm::translate(glm::vec3(0.5f, 0.5f, 0.0f))
+            * glm::scale(glm::vec3(0.5f, 0.5f, 1.0f))
+            * light_projection_matrix * light_view_matrix
+            * glm::inverse(view_matrix);
 
         global_ubo.view_inverse = glm::inverse(view_matrix);
         global_ubo.view_space_light_position = view_matrix * glm::vec4(light_object.position, 1.0f);
@@ -933,6 +946,16 @@ int main() {
             }
         }
 
+        transition_image_layout(
+            vk_device,
+            command_pool, graphics_queue,
+            shadowmap_depth_textures[0].m_image,
+            VK_FORMAT_D32_SFLOAT,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            1
+        );
+
         // Render scene
         vkResetCommandBuffer(command_buffers[current_frame], 0);
         render_frame(command_buffers[current_frame], image_index, current_frame);
@@ -953,6 +976,16 @@ int main() {
             "Could not submit queue"
         );
         vkDeviceWaitIdle(vk_device); // Too lazy to implement proper synchronization
+
+        transition_image_layout(
+            vk_device,
+            command_pool, graphics_queue,
+            shadowmap_depth_textures[0].m_image,
+            VK_FORMAT_D32_SFLOAT,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            1
+        );
 
         // Present on screen
         VkPresentInfoKHR present_info = {};
