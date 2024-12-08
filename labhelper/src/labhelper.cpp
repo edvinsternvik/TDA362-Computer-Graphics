@@ -633,6 +633,7 @@ SurfaceInfo get_surface_info(VkPhysicalDevice physical_device, VkSurfaceKHR surf
 
 std::vector<char> read_file(const char* file_name) {
     std::ifstream fs(file_name, std::ios::ate | std::ios::binary);
+    if(!fs.is_open()) throw std::runtime_error("Could not open file " + std::string(file_name));
     size_t file_size = fs.tellg();
     std::vector<char> file_buffer(file_size);
     fs.seekg(0);

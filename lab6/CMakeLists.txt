@@ -35,19 +35,19 @@ add_custom_command(
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/lab6"
 )
 add_custom_command(
-    OUTPUT postfx_vert.spv
-    COMMAND glslc src/postfx_shader.vert -o postfx_vert.spv
-    DEPENDS src/postfx_shader.vert
+    OUTPUT shadowmap_vert.spv
+    COMMAND glslc src/shadowmap_shader.vert -o shadowmap_vert.spv
+    DEPENDS src/shadowmap_shader.vert
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/lab6"
 )
 add_custom_command(
-    OUTPUT postfx_frag.spv
-    COMMAND glslc src/postfx_shader.frag -o postfx_frag.spv
-    DEPENDS src/postfx_shader.frag
+    OUTPUT shadowmap_frag.spv
+    COMMAND glslc src/shadowmap_shader.frag -o shadowmap_frag.spv
+    DEPENDS src/shadowmap_shader.frag
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/lab6"
 )
 add_custom_target(generate_shaders_lab6
-    DEPENDS vert.spv frag.spv bg_vert.spv bg_frag.spv postfx_vert.spv postfx_frag.spv
+    DEPENDS vert.spv frag.spv bg_vert.spv bg_frag.spv shadowmap_vert.spv shadowmap_frag.spv
 )
 
 add_dependencies(lab6 generate_shaders_lab6)

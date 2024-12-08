@@ -6,8 +6,10 @@
 #include <vulkan/vulkan_core.h>
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/gtx/rotate_vector.hpp>
 #include <vector>
 #include <array>
 #include <imgui.h>
@@ -117,19 +119,6 @@ int main() {
     sampler_create_info.maxAnisotropy = device_properties.limits.maxSamplerAnisotropy;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
-
-    // Main framebuffers
-    std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> main_framebuffers;
-    std::array<Texture, MAX_FRAMES_IN_FLIGHT> main_color_textures;
-    std::array<Texture, MAX_FRAMES_IN_FLIGHT> main_depth_textures;
-    for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-        create_framebuffer_complete(
-            vk_device, physical_device,
-            command_pool, graphics_queue,
-            render_pass, surface_info.capabilities.currentExtent,
-            &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
-        );
-    }
 
     // Shadow map framebuffers
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> shadowmap_framebuffers;
@@ -275,8 +264,8 @@ int main() {
     auto model_attributes = create_model_attributes();
 
     // Shader
-    std::vector<char> material_vert_shader_src = read_file("lab5/vert.spv");
-    std::vector<char> material_frag_shader_src = read_file("lab5/frag.spv");
+    std::vector<char> material_vert_shader_src = read_file("lab6/vert.spv");
+    std::vector<char> material_frag_shader_src = read_file("lab6/frag.spv");
     VkShaderModule material_vert_shader_module = create_shader_module(
         vk_device, material_vert_shader_src
     );
@@ -340,8 +329,8 @@ int main() {
     // Background render pipeline
 
     // Shader
-    std::vector<char> bg_vert_shader_src = read_file("lab5/bg_vert.spv");
-    std::vector<char> bg_frag_shader_src = read_file("lab5/bg_frag.spv");
+    std::vector<char> bg_vert_shader_src = read_file("lab6/bg_vert.spv");
+    std::vector<char> bg_frag_shader_src = read_file("lab6/bg_frag.spv");
     VkShaderModule bg_vert_shader_module = create_shader_module(
         vk_device, bg_vert_shader_src
     );
@@ -421,93 +410,36 @@ int main() {
     vkDestroyShaderModule(vk_device, bg_vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, bg_frag_shader_module, nullptr);
 
-    // Post processing render pipeline
+    // Shadowmap render pipeline
 
     // Shader
-    std::vector<char> postfx_vert_shader_src = read_file("lab5/postfx_vert.spv");
-    std::vector<char> postfx_frag_shader_src = read_file("lab5/postfx_frag.spv");
-    VkShaderModule postfx_vert_shader_module = create_shader_module(
-        vk_device, postfx_vert_shader_src
+    std::vector<char> shadowmap_vert_shader_src = read_file("lab6/shadowmap_vert.spv");
+    std::vector<char> shadowmap_frag_shader_src = read_file("lab6/shadowmap_frag.spv");
+    VkShaderModule shadowmap_vert_shader_module = create_shader_module(
+        vk_device, shadowmap_vert_shader_src
     );
-    VkShaderModule postfx_frag_shader_module = create_shader_module(
-        vk_device, postfx_frag_shader_src
+    VkShaderModule shadowmap_frag_shader_module = create_shader_module(
+        vk_device, shadowmap_frag_shader_src
     );
-
-    // Descriptors
-    struct PostFXUniformBlock {
-        float time;
-        int filter_size;
-        int enable_mushrooms;
-        int enable_mosaiac;
-        int enable_blur;
-        int enable_grayscale;
-        int enable_sepia;
-    };
-
-    VkBuffer postfx_ubo_buffer = create_buffer(
-        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(PostFXUniformBlock)
-    );
-    VkDeviceMemory postfx_ubo_memory = allocate_buffer_memory(
-        vk_device, physical_device,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        postfx_ubo_buffer
-    );
-    std::vector<DescriptorInfo> postfx_descriptors = {
-        {
-            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
-            std::make_optional(postfx_ubo_buffer), std::make_optional(sizeof(PostFXUniformBlock)),
-            std::nullopt, std::nullopt
-        },
-        {
-            1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
-            std::nullopt, std::nullopt,
-            std::make_optional(main_color_textures[0].m_image_view), std::make_optional(sampler)
-        }
-    };
-
-    VkDescriptorPool postfx_descriptor_pool;
-    VkDescriptorSetLayout postfx_descriptor_set_layout;
-    VkDescriptorSet postfx_descriptor_set;
-    create_descriptors(
-        vk_device,
-        &postfx_descriptor_pool,
-        &postfx_descriptor_set_layout, &postfx_descriptor_set,
-        postfx_descriptors
-    );
-
-    update_descriptors(vk_device, postfx_descriptor_set, postfx_descriptors);
 
     // Pipeline
-    VkPipelineLayout postfx_pipeline_layout = create_pipeline_layout(
+    VkPipelineLayout shadowmap_pipeline_layout = create_pipeline_layout(
         vk_device,
-        { postfx_descriptor_set_layout }
+        { material_descriptor_set_layout }
     );
 
-    VkPipelineDepthStencilStateCreateInfo postfx_depth_stencil = {};
-    postfx_depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    postfx_depth_stencil.depthTestEnable = VK_FALSE;
-    postfx_depth_stencil.depthWriteEnable = VK_FALSE;
-    postfx_depth_stencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
-    postfx_depth_stencil.depthBoundsTestEnable = VK_FALSE;
-    postfx_depth_stencil.minDepthBounds = 0.0f;
-    postfx_depth_stencil.maxDepthBounds = 1.0f;
-    postfx_depth_stencil.stencilTestEnable = VK_FALSE;
-    postfx_depth_stencil.front = {};
-    postfx_depth_stencil.back = {};
-
-    VkPipeline postfx_pipeline = create_graphics_pipeline(
+    VkPipeline shadowmap_pipeline = create_graphics_pipeline(
         vk_device,
-        postfx_pipeline_layout,
+        shadowmap_pipeline_layout,
         render_pass,
-        { quad_binding_description },
-        { quad_position_attribute },
-        postfx_vert_shader_module,
-        postfx_frag_shader_module,
-        postfx_depth_stencil
+        { model_attributes.first },
+        model_attributes.second,
+        shadowmap_vert_shader_module,
+        shadowmap_frag_shader_module
     );
 
-    vkDestroyShaderModule(vk_device, postfx_vert_shader_module, nullptr);
-    vkDestroyShaderModule(vk_device, postfx_frag_shader_module, nullptr);
+    vkDestroyShaderModule(vk_device, shadowmap_vert_shader_module, nullptr);
+    vkDestroyShaderModule(vk_device, shadowmap_frag_shader_module, nullptr);
 
     // Load objects
     Model spaceship_model = load_model_from_file(
@@ -653,6 +585,13 @@ int main() {
     glm::vec3 camera_position = -glm::vec3(-30.0, 10.0, 30.0);
     glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 5.0, 30.0));
 
+    float light_distance = 55.0;
+    float light_azimuth = 0.0;
+    float light_zenith = 45.0;
+    glm::mat3 light_rot =
+        glm::rotate(glm::radians(light_azimuth), glm::vec3(0, 1, 0))
+        * glm::rotate(glm::radians(light_zenith), glm::vec3(0, 0, 1));
+
     auto start_time = std::chrono::high_resolution_clock::now();
     float previous_frame_time = 0.0f;
 
@@ -669,19 +608,19 @@ int main() {
     global_ubo.light_intensity = 100.0;
     global_ubo.env_multiplier = 0.1;
 
-    PostFXUniformBlock postfx_ubo = {};
-    postfx_ubo.time = 0.0;
-    postfx_ubo.filter_size = 3;
-    postfx_ubo.enable_mushrooms = false;
-    postfx_ubo.enable_mosaiac = false;
-    postfx_ubo.enable_blur = false;
-    postfx_ubo.enable_grayscale = false;
-    postfx_ubo.enable_sepia = false;
-    write_memory_mapped(vk_device, postfx_ubo_memory, postfx_ubo);
-
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
-    auto render_shadowmap = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
+    auto render_shadowmap = [&](
+        VkCommandBuffer command_buffer,
+        uint32_t image_index, uint32_t current_frame,
+        glm::mat4 light_view_matrix, glm::mat4 light_projection_matrix
+    ) {
+        update_frame_data(
+            vk_device,
+            &frame_data[current_frame],
+            sampler, objects, models,
+            light_view_matrix, light_projection_matrix
+        );
         VkCommandBufferBeginInfo begin_info = {};
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         VK_HANDLE_ERROR(
@@ -721,31 +660,8 @@ int main() {
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-        // Render background
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, bg_pipeline);
-
-        vkCmdBindDescriptorSets(
-            command_buffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            bg_pipeline_layout,
-            0, 1,
-            &bg_descriptor_set,
-            0, nullptr
-        );
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &quad_vertex_buffer, offsets);
-        vkCmdDraw(command_buffer, quad_vertices.size(), 1, 0, 0);
-
         // Render scene
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, material_pipeline);
-
-        vkCmdBindDescriptorSets(
-            command_buffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            material_pipeline_layout,
-            1, 1,
-            &global_descriptor_set,
-            0, nullptr
-        );
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowmap_pipeline);
 
         size_t descriptor_index = 0;
         for(const Object* object : objects) {
@@ -762,7 +678,7 @@ int main() {
                     0, nullptr
                 );
                 vkCmdDraw(command_buffer, mesh.m_num_vertices, 1, mesh.m_start_index, 0);
-
+                
                 descriptor_index++;
             }
         }
@@ -791,10 +707,7 @@ int main() {
         std::array<VkClearValue, 2> clear_values = {};
         clear_values[0].color = { clear_color.r, clear_color.g, clear_color.b, clear_color.a };
         clear_values[1].depthStencil = { 1.0f, 0 };
-        VkExtent2D render_extent = {
-            static_cast<uint32_t>(main_color_textures[current_frame].m_width),
-            static_cast<uint32_t>(main_color_textures[current_frame].m_height)
-        }; 
+        VkExtent2D render_extent = surface_info.capabilities.currentExtent;
         VkViewport viewport = {};
         viewport.x = 0.0f;
         viewport.y = 0.0f;
@@ -811,7 +724,7 @@ int main() {
         render_pass_begin_info = {};
         render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         render_pass_begin_info.renderPass = render_pass;
-        render_pass_begin_info.framebuffer = main_framebuffers[current_frame];
+        render_pass_begin_info.framebuffer = framebuffers[image_index];
         render_pass_begin_info.renderArea.offset = {0, 0};
         render_pass_begin_info.renderArea.extent = render_extent;
         render_pass_begin_info.clearValueCount = clear_values.size();
@@ -866,79 +779,8 @@ int main() {
             }
         }
 
-        vkCmdEndRenderPass(command_buffer);
-        VK_HANDLE_ERROR(
-            vkEndCommandBuffer(command_buffer),
-            "Could not end command buffer"
-        );
-
-    };
-
-    auto render_post_processing = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
-        postfx_descriptors[1].image_view = main_color_textures[current_frame].m_image_view;
-        update_descriptors(vk_device, postfx_descriptor_set, postfx_descriptors);
-
-        VkCommandBufferBeginInfo begin_info = {};
-        begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        VK_HANDLE_ERROR(
-            vkBeginCommandBuffer(command_buffer, &begin_info),
-            "Could not begin command buffer"
-        );
-
-        std::array<VkClearValue, 2> clear_values = {};
-        clear_values[0].color = { clear_color.r, clear_color.g, clear_color.b, clear_color.a };
-        clear_values[1].depthStencil = { 1.0f, 0 };
-        VkViewport viewport = {};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = surface_info.capabilities.currentExtent.width;
-        viewport.height = surface_info.capabilities.currentExtent.height;
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        VkRect2D scissor = {};
-        scissor.offset = { 0, 0 };
-        scissor.extent = surface_info.capabilities.currentExtent;
-        VkDeviceSize offsets[] = { 0 };
-
-        VkRenderPassBeginInfo render_pass_begin_info = {};
-        render_pass_begin_info = {};
-        render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        render_pass_begin_info.renderPass = render_pass;
-        render_pass_begin_info.framebuffer = framebuffers[image_index];
-        render_pass_begin_info.renderArea.offset = {0, 0};
-        render_pass_begin_info.renderArea.extent = surface_info.capabilities.currentExtent;
-        render_pass_begin_info.clearValueCount = clear_values.size();
-        render_pass_begin_info.pClearValues = clear_values.data();
-        vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, postfx_pipeline);
-
-        vkCmdBindDescriptorSets(
-            command_buffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            postfx_pipeline_layout,
-            0, 1,
-            &postfx_descriptor_set,
-            0, nullptr
-        );
-
-        vkCmdBindVertexBuffers(command_buffer, 0, 1, &quad_vertex_buffer, offsets);
-        vkCmdDraw(command_buffer, quad_vertices.size(), 1, 0, 0);
-
         // Render GUI
         imgui_new_frame();
-        ImGui::SliderFloat("Light intensity", &global_ubo.light_intensity, 0.0, 500.0);
-        ImGui::SliderFloat("Environment intensity", &global_ubo.env_multiplier, 0.0, 100.0);
-        ImGui::SliderFloat("Environment multiplier", &bg_ubo.environment_multiplier, 0.0, 2.0);
-        ImGui::ColorEdit3("Environment intensity", (float*)&global_ubo.light_color);
-        ImGui::Checkbox("Enable mushrooms", (bool*)&postfx_ubo.enable_mushrooms);
-        ImGui::Checkbox("Enable mosaiac", (bool*)&postfx_ubo.enable_mosaiac);
-        ImGui::Checkbox("Enable blur", (bool*)&postfx_ubo.enable_blur);
-        ImGui::SliderInt("Blur size", &postfx_ubo.filter_size, 1, 10);
-        ImGui::Checkbox("Enable grayscale", (bool*)&postfx_ubo.enable_grayscale);
-        ImGui::Checkbox("Enable sepia", (bool*)&postfx_ubo.enable_sepia);
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
@@ -946,6 +788,7 @@ int main() {
             vkEndCommandBuffer(command_buffer),
             "Could not end command buffer"
         );
+
     };
 
     // Run application
@@ -1001,9 +844,15 @@ int main() {
             spaceship_object.orientation, 0.25f * delta_time, world_up
         );
 
-        /* light_object.position = */ 
-        /*     glm::rotate(glm::identity<glm::quat>(), delta_time * 10.0f, world_up) */
-        /*     * light_object.position; */
+        light_object.position = light_rot * glm::vec3(light_distance, 0.0, 0.0);
+        glm::mat4 light_view_matrix = glm::lookAt(
+            light_object.position, glm::zero<glm::vec3>(), world_up
+        );
+        glm::mat4 light_projection_matrix = glm::perspective(
+            glm::radians(45.0f), 1.0f, 25.0f, 100.0f
+        );
+        light_projection_matrix[1][1] *= -1.0;
+
         global_ubo.view_inverse = glm::inverse(view_matrix);
         global_ubo.view_space_light_position = view_matrix * glm::vec4(light_object.position, 1.0f);
         write_memory_mapped(vk_device, global_ubo_memory, global_ubo);
@@ -1011,9 +860,6 @@ int main() {
         bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
         bg_ubo.camera_pos = camera_position;
         write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
-
-        postfx_ubo.time = current_time.count();
-        write_memory_mapped(vk_device, postfx_ubo_memory, postfx_ubo);
 
         // Render frame
         vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
@@ -1035,31 +881,12 @@ int main() {
                 graphics_family, present_family,
                 render_pass
             );
-            for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-                vkDestroyFramebuffer(vk_device, main_framebuffers[i], nullptr);
-                main_color_textures[i].destroy(vk_device);
-                main_depth_textures[i].destroy(vk_device);
-                create_framebuffer_complete(
-                    vk_device, physical_device,
-                    command_pool, graphics_queue,
-                    render_pass, surface_info.capabilities.currentExtent,
-                    &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
-                );
-            }
             continue;
         }
 
         vkResetFences(vk_device, 1, &frame_in_flight[current_frame]);
 
         // Render shadowmap
-        vkDeviceWaitIdle(vk_device); // Too lazy to implement proper synchronization
-        uint32_t prev_frame = (current_frame + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
-        for(auto& m : landingpad_model.m_materials) {
-            if(m.m_name == "TV_Screen") {
-                m.m_emission_texture = shadowmap_color_textures[prev_frame];
-            }
-        }
-        update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, view_matrix, projection_matrix);
         vkDeviceWaitIdle(vk_device); // Too lazy to implement proper synchronization
         transition_image_layout(
             vk_device,
@@ -1070,8 +897,9 @@ int main() {
             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             1
         );
+        uint32_t prev_frame = (current_frame + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
         vkResetCommandBuffer(command_buffers[current_frame], 0);
-        render_shadowmap(command_buffers[current_frame], image_index, current_frame);
+        render_shadowmap(command_buffers[current_frame], image_index, current_frame, light_view_matrix, light_projection_matrix);
 
         VkSubmitInfo submit_info = {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -1104,32 +932,10 @@ int main() {
                 m.m_emission_texture = shadowmap_color_textures[current_frame];
             }
         }
-        update_frame_data(vk_device, &frame_data[current_frame], sampler, objects, models, view_matrix, projection_matrix);
-        vkDeviceWaitIdle(vk_device); // Too lazy to implement proper synchronization
 
         // Render scene
         vkResetCommandBuffer(command_buffers[current_frame], 0);
         render_frame(command_buffers[current_frame], image_index, current_frame);
-
-        VK_HANDLE_ERROR(
-            vkQueueSubmit(graphics_queue, 1, &submit_info, nullptr),
-            "Could not submit queue"
-        );
-        vkDeviceWaitIdle(vk_device); // Too lazy to implement proper synchronization
-
-        transition_image_layout(
-            vk_device,
-            command_pool, graphics_queue,
-            main_color_textures[current_frame].m_image,
-            VK_FORMAT_B8G8R8A8_SRGB,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            1
-        );
-
-        // Post processing
-        vkResetCommandBuffer(command_buffers[current_frame], 0);
-        render_post_processing(command_buffers[current_frame], image_index, current_frame);
 
         VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submit_info = {};
@@ -1173,17 +979,6 @@ int main() {
                 graphics_family, present_family,
                 render_pass
             );
-            for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-                vkDestroyFramebuffer(vk_device, main_framebuffers[i], nullptr);
-                main_color_textures[i].destroy(vk_device);
-                main_depth_textures[i].destroy(vk_device);
-                create_framebuffer_complete(
-                    vk_device, physical_device,
-                    command_pool, graphics_queue,
-                    render_pass, surface_info.capabilities.currentExtent,
-                    &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
-                );
-            }
             continue;
         }
 
@@ -1196,9 +991,6 @@ int main() {
     for(auto& m : landingpad_model.m_materials) {
         if(m.m_name == "TV_Screen") m.m_emission_texture = {};
     }
-    for(auto fb : main_framebuffers) vkDestroyFramebuffer(vk_device, fb, nullptr);
-    for(auto t : main_color_textures) t.destroy(vk_device);
-    for(auto t : main_depth_textures) t.destroy(vk_device);
     for(auto fb : shadowmap_framebuffers) vkDestroyFramebuffer(vk_device, fb, nullptr);
     for(auto t : shadowmap_color_textures) t.destroy(vk_device);
     for(auto t : shadowmap_depth_textures) t.destroy(vk_device);
@@ -1206,12 +998,6 @@ int main() {
     vkDestroyDescriptorPool(vk_device, global_descriptor_pool, nullptr);
     vkDestroyBuffer(vk_device, global_ubo_buffer, nullptr);
     vkFreeMemory(vk_device, global_ubo_memory, nullptr);
-    vkDestroyDescriptorSetLayout(vk_device, postfx_descriptor_set_layout, nullptr);
-    vkDestroyPipeline(vk_device, postfx_pipeline, nullptr);
-    vkDestroyPipelineLayout(vk_device, postfx_pipeline_layout, nullptr);
-    vkDestroyDescriptorPool(vk_device, postfx_descriptor_pool, nullptr);
-    vkDestroyBuffer(vk_device, postfx_ubo_buffer, nullptr);
-    vkFreeMemory(vk_device, postfx_ubo_memory, nullptr);
     vkDestroyDescriptorSetLayout(vk_device, bg_descriptor_set_layout, nullptr);
     vkDestroyPipeline(vk_device, bg_pipeline, nullptr);
     vkDestroyPipelineLayout(vk_device, bg_pipeline_layout, nullptr);
@@ -1235,6 +1021,8 @@ int main() {
     for(const auto framebuffer : framebuffers) {
         vkDestroyFramebuffer(vk_device, framebuffer, nullptr);
     }
+    vkDestroyPipeline(vk_device, shadowmap_pipeline, nullptr);
+    vkDestroyPipelineLayout(vk_device, shadowmap_pipeline_layout, nullptr);
     vkDestroyPipeline(vk_device, material_pipeline, nullptr);
     vkDestroyPipelineLayout(vk_device, material_pipeline_layout, nullptr);
     vkDestroyRenderPass(vk_device, render_pass, nullptr);
