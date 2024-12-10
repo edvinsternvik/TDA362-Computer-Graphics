@@ -121,6 +121,7 @@ int main() {
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
     VkSampler shadow_sampler;
+    sampler_create_info.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     sampler_create_info.minFilter = VK_FILTER_NEAREST;
     sampler_create_info.magFilter = VK_FILTER_NEAREST;
     sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
@@ -221,6 +222,9 @@ int main() {
         float light_intensity;
         glm::vec3 light_color;
         float env_multiplier;
+        glm::vec3 light_view_dir;
+        float spot_inner_angle;
+        float spot_outer_angle;
     };
 
     VkBuffer global_ubo_buffer = create_buffer(
@@ -234,7 +238,7 @@ int main() {
 
     std::vector<DescriptorInfo> global_descriptors = {
         {
-            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_VERTEX_BIT,
             std::make_optional(global_ubo_buffer), std::make_optional(sizeof(GlobalUBO)),
             std::nullopt, std::nullopt
         },
@@ -647,6 +651,13 @@ int main() {
     global_ubo.light_color = glm::vec3(1.0, 1.0, 1.0);
     global_ubo.light_intensity = 800.0;
     global_ubo.env_multiplier = 0.1;
+    global_ubo.light_view_dir = glm::normalize(
+        glm::vec3(view_matrix * glm::vec4(-light_object.position, 0.0))
+    );
+    global_ubo.spot_inner_angle = 17.5;
+    global_ubo.spot_outer_angle = 22.5;
+    float inner_angle = global_ubo.spot_inner_angle;
+    float outer_angle = global_ubo.spot_outer_angle;
 
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
@@ -840,6 +851,10 @@ int main() {
         if(shadowmap_rasterizer.depthBiasSlopeFactor != depth_bias_offset) {
             regenerate_shadowmap_pipeline = true;
         }
+        ImGui::SliderFloat("Spotlight inner angle", &inner_angle, 0.0, 90.0);
+        ImGui::SliderFloat("Spotlight outer angle", &outer_angle, 0.0, 90.0);
+        global_ubo.spot_inner_angle = std::cos(glm::radians(inner_angle));
+        global_ubo.spot_outer_angle = std::cos(glm::radians(outer_angle));
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
@@ -920,6 +935,9 @@ int main() {
 
         global_ubo.view_inverse = glm::inverse(view_matrix);
         global_ubo.view_space_light_position = view_matrix * glm::vec4(light_object.position, 1.0f);
+        global_ubo.light_view_dir = glm::normalize(
+            glm::vec3(view_matrix * glm::vec4(-light_object.position, 0.0))
+        );
         write_memory_mapped(vk_device, global_ubo_memory, global_ubo);
 
         bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);

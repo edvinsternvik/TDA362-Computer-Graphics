@@ -3,6 +3,7 @@
 layout(location = 0) in vec3 in_position;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_uv;
+layout(location = 3) in vec4 in_shadow_map_coords;
 
 layout(binding = 1) uniform MaterialUBO {
     vec3 color;
@@ -26,6 +27,9 @@ layout(set = 1, binding = 0) uniform GlobalUBO {
     float light_intensity;
     vec3 light_color;
     float env_multiplier;
+    vec3 light_view_dir;
+    float spot_inner_angle;
+    float spot_outer_angle;
 };
 layout(set = 1, binding = 1) uniform sampler2D env_sampler;
 layout(set = 1, binding = 2) uniform sampler2D irradiance_sampler;
@@ -142,9 +146,13 @@ void main() {
         base_color *= tex_color.rgb;
     }
 
-    vec4 shadowmap_coords = light_matrix * vec4(in_position, 1.0);
-    float depth = texture(shadowmap_sampler, shadowmap_coords.xy / shadowmap_coords.w).x;
-    float visibility = (depth >= (shadowmap_coords.z / shadowmap_coords.w)) ? 1.0 : 0.0;
+    float depth = texture(shadowmap_sampler, in_shadow_map_coords.xy / in_shadow_map_coords.w).x;
+    float visibility = (depth >= (in_shadow_map_coords.z / in_shadow_map_coords.w)) ? 1.0 : 0.0;
+
+    vec3 pos_to_light = normalize(light_view_pos - in_position);
+    float cos_angle = dot(pos_to_light, -light_view_dir);
+    float spot_attenuation = smoothstep(spot_outer_angle, spot_inner_angle, cos_angle);
+    visibility *= spot_attenuation;
 
     vec3 dir_elim_term = visibility * direct_illumination(wo, normal, base_color);
 
