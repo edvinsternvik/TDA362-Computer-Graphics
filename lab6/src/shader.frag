@@ -30,11 +30,14 @@ layout(set = 1, binding = 0) uniform GlobalUBO {
     vec3 light_view_dir;
     float spot_inner_angle;
     float spot_outer_angle;
+    bool use_spot_light;
+    bool use_soft_falloff;
 };
 layout(set = 1, binding = 1) uniform sampler2D env_sampler;
 layout(set = 1, binding = 2) uniform sampler2D irradiance_sampler;
 layout(set = 1, binding = 3) uniform sampler2D reflection_sampler;
-layout(set = 1, binding = 4) uniform sampler2D shadowmap_sampler;
+layout(set = 1, binding = 4) uniform sampler2DShadow shadowmap_sampler;
+// layout(set = 1, binding = 4) uniform sampler2D shadowmap_sampler;
 
 layout(location = 0) out vec4 out_color;
 
@@ -146,13 +149,22 @@ void main() {
         base_color *= tex_color.rgb;
     }
 
-    float depth = texture(shadowmap_sampler, in_shadow_map_coords.xy / in_shadow_map_coords.w).x;
-    float visibility = (depth >= (in_shadow_map_coords.z / in_shadow_map_coords.w)) ? 1.0 : 0.0;
+    // float depth = texture(shadowmap_sampler, in_shadow_map_coords.xy / in_shadow_map_coords.w).x;
+    // float visibility = (depth >= (in_shadow_map_coords.z / in_shadow_map_coords.w)) ? 1.0 : 0.0;
+    float visibility = textureProj(shadowmap_sampler, in_shadow_map_coords);
 
-    vec3 pos_to_light = normalize(light_view_pos - in_position);
-    float cos_angle = dot(pos_to_light, -light_view_dir);
-    float spot_attenuation = smoothstep(spot_outer_angle, spot_inner_angle, cos_angle);
-    visibility *= spot_attenuation;
+    if(use_spot_light) {
+        vec3 pos_to_light = normalize(light_view_pos - in_position);
+        float cos_angle = dot(pos_to_light, -light_view_dir);
+        float spot_attenuation = 1.0;
+        if(use_soft_falloff) {
+            spot_attenuation = smoothstep(spot_outer_angle, spot_inner_angle, cos_angle);
+        }
+        else {
+            spot_attenuation = (cos_angle > spot_outer_angle) ? 1.0 : 0.0;
+        }
+        visibility *= spot_attenuation;
+    }
 
     vec3 dir_elim_term = visibility * direct_illumination(wo, normal, base_color);
 

@@ -20,6 +20,8 @@ layout(set = 1, binding = 0) uniform GlobalUBO {
     vec3 light_view_dir;
     float spot_inner_angle;
     float spot_outer_angle;
+    bool use_spot_light;
+    bool use_soft_falloff;
 };
 
 layout(location = 0) out vec3 out_position;

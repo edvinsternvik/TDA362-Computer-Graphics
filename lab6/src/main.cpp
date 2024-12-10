@@ -121,6 +121,7 @@ int main() {
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
     VkSampler shadow_sampler;
+    sampler_create_info.compareEnable = VK_TRUE;
     sampler_create_info.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
     sampler_create_info.minFilter = VK_FILTER_NEAREST;
     sampler_create_info.magFilter = VK_FILTER_NEAREST;
@@ -225,6 +226,8 @@ int main() {
         glm::vec3 light_view_dir;
         float spot_inner_angle;
         float spot_outer_angle;
+        int use_spot_light;
+        int use_soft_falloff;
     };
 
     VkBuffer global_ubo_buffer = create_buffer(
@@ -457,7 +460,7 @@ int main() {
     shadowmap_rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     shadowmap_rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     shadowmap_rasterizer.depthBiasEnable = VK_TRUE;
-    shadowmap_rasterizer.depthBiasSlopeFactor = 1.0;
+    shadowmap_rasterizer.depthBiasSlopeFactor = 2.5;
 
     VkPipeline shadowmap_pipeline = create_graphics_pipeline(
         vk_device,
@@ -654,6 +657,8 @@ int main() {
     global_ubo.light_view_dir = glm::normalize(
         glm::vec3(view_matrix * glm::vec4(-light_object.position, 0.0))
     );
+    global_ubo.use_spot_light = false;
+    global_ubo.use_soft_falloff = false;
     global_ubo.spot_inner_angle = 17.5;
     global_ubo.spot_outer_angle = 22.5;
     float inner_angle = global_ubo.spot_inner_angle;
@@ -832,6 +837,7 @@ int main() {
 
         // Render GUI
         imgui_new_frame();
+
         if(ImGui::BeginMainMenuBar()) {
             if(ImGui::BeginMenu("Scene")) {
                 for(const auto& scene : scenes) {
@@ -851,10 +857,18 @@ int main() {
         if(shadowmap_rasterizer.depthBiasSlopeFactor != depth_bias_offset) {
             regenerate_shadowmap_pipeline = true;
         }
-        ImGui::SliderFloat("Spotlight inner angle", &inner_angle, 0.0, 90.0);
-        ImGui::SliderFloat("Spotlight outer angle", &outer_angle, 0.0, 90.0);
+
+        ImGui::Checkbox("Use spot light", (bool*)&global_ubo.use_spot_light);
+        if(global_ubo.use_spot_light) {
+            ImGui::Checkbox("Use soft falloff", (bool*)&global_ubo.use_soft_falloff);
+            if(global_ubo.use_soft_falloff) {
+                ImGui::SliderFloat("Spotlight inner angle", &inner_angle, 0.0, 90.0);
+            }
+            ImGui::SliderFloat("Spotlight outer angle", &outer_angle, 0.0, 90.0);
+        }
         global_ubo.spot_inner_angle = std::cos(glm::radians(inner_angle));
         global_ubo.spot_outer_angle = std::cos(glm::radians(outer_angle));
+
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
