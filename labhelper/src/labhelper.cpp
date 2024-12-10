@@ -419,6 +419,7 @@ VkPipeline create_graphics_pipeline(
     const std::vector<VkVertexInputAttributeDescription>& vertex_attribute_descriptions,
     VkShaderModule vert_shader_module,
     VkShaderModule frag_shader_module,
+    std::optional<VkPipelineRasterizationStateCreateInfo> rasterizer_info,
     std::optional<VkPipelineDepthStencilStateCreateInfo> depth_stencil_info
 ) {
     std::vector<VkDynamicState> dynamic_states = {
@@ -473,6 +474,7 @@ VkPipeline create_graphics_pipeline(
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
+    if(rasterizer_info.has_value()) rasterizer = rasterizer_info.value();
 
     VkPipelineMultisampleStateCreateInfo multisampling = {};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;

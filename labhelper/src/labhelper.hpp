@@ -108,6 +108,7 @@ VkPipeline create_graphics_pipeline(
     const std::vector<VkVertexInputAttributeDescription>& vertex_attribute_descriptions,
     VkShaderModule vert_shader_module,
     VkShaderModule frag_shader_module,
+    std::optional<VkPipelineRasterizationStateCreateInfo> rasterizer_info = std::nullopt,
     std::optional<VkPipelineDepthStencilStateCreateInfo> depth_stencil_info = std::nullopt
 );
 

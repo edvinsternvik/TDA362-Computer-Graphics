@@ -112,13 +112,22 @@ int main() {
     sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sampler_create_info.mipLodBias = 0.0f;
     sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler_create_info.anisotropyEnable = VK_TRUE;
     sampler_create_info.maxAnisotropy = device_properties.limits.maxSamplerAnisotropy;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
+
+    VkSampler shadow_sampler;
+    sampler_create_info.minFilter = VK_FILTER_NEAREST;
+    sampler_create_info.magFilter = VK_FILTER_NEAREST;
+    sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+    vkCreateSampler(vk_device, &sampler_create_info, nullptr, &shadow_sampler);
 
     // Shadow map framebuffers
     std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> shadowmap_framebuffers;
@@ -247,7 +256,7 @@ int main() {
         {
             4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
-            std::make_optional(shadowmap_depth_textures[0].m_image_view), std::make_optional(sampler)
+            std::make_optional(shadowmap_depth_textures[0].m_image_view), std::make_optional(shadow_sampler)
         }
     };
 
@@ -410,6 +419,7 @@ int main() {
         { quad_position_attribute },
         bg_vert_shader_module,
         bg_frag_shader_module,
+        std::nullopt,
         bg_depth_stencil
     );
 
@@ -434,6 +444,17 @@ int main() {
         { material_descriptor_set_layout }
     );
 
+    VkPipelineRasterizationStateCreateInfo shadowmap_rasterizer = {};
+    shadowmap_rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    shadowmap_rasterizer.depthClampEnable = VK_FALSE;
+    shadowmap_rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    shadowmap_rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    shadowmap_rasterizer.lineWidth = 1.0f;
+    shadowmap_rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    shadowmap_rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    shadowmap_rasterizer.depthBiasEnable = VK_TRUE;
+    shadowmap_rasterizer.depthBiasSlopeFactor = 1.0;
+
     VkPipeline shadowmap_pipeline = create_graphics_pipeline(
         vk_device,
         shadowmap_pipeline_layout,
@@ -441,11 +462,9 @@ int main() {
         { model_attributes.first },
         model_attributes.second,
         shadowmap_vert_shader_module,
-        shadowmap_frag_shader_module
+        shadowmap_frag_shader_module,
+        shadowmap_rasterizer
     );
-
-    vkDestroyShaderModule(vk_device, shadowmap_vert_shader_module, nullptr);
-    vkDestroyShaderModule(vk_device, shadowmap_frag_shader_module, nullptr);
 
     // Load objects
     Model spaceship_model = load_model_from_file(
@@ -464,6 +483,10 @@ int main() {
         vk_device, physical_device, command_pool, graphics_queue,
         "scenes/landingpad.obj"
     );
+    Model peter_pan_plane_model = load_model_from_file(
+        vk_device, physical_device, command_pool, graphics_queue,
+        "scenes/peter-panning-plane.obj"
+    );
     for(auto& m : landingpad_model.m_materials) {
         if(m.m_name == "TV_Screen") {
             m.m_emission_texture->destroy(vk_device);
@@ -474,7 +497,8 @@ int main() {
         &spaceship_model,
         &materialtest_model,
         &sphere_model,
-        &landingpad_model
+        &landingpad_model,
+        &peter_pan_plane_model
     };
 
     Object spaceship_object = {};
@@ -501,12 +525,20 @@ int main() {
     landingpad_object.scale = glm::one<glm::vec3>();
     landingpad_object.m_model_index = 3;
 
+    Object peter_pan_plane_object = {};
+    peter_pan_plane_object.position = glm::vec3(0.0, 0.0, 0.0);
+    peter_pan_plane_object.orientation = glm::identity<glm::quat>();
+    peter_pan_plane_object.scale = glm::vec3(1.0, 1.0, 1.0);
+    peter_pan_plane_object.m_model_index = 4;
+
     std::vector<Object*> objects = {
         &spaceship_object,
-        /* &materialtest_object, */
         &light_object,
         &landingpad_object
     };
+
+    std::array<std::string, 2> scenes = { "Ship", "Peter Panning" };
+    std::string current_scene = "Ship";
 
     // Create uniform buffers
     glm::mat4 view_matrix = glm::identity<glm::mat4>();
@@ -600,6 +632,7 @@ int main() {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     float previous_frame_time = 0.0f;
+    bool regenerate_shadowmap_pipeline = false;
 
     BgUniformBlock bg_ubo = {};
     bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
@@ -788,6 +821,25 @@ int main() {
 
         // Render GUI
         imgui_new_frame();
+        if(ImGui::BeginMainMenuBar()) {
+            if(ImGui::BeginMenu("Scene")) {
+                for(const auto& scene : scenes) {
+                    if(ImGui::MenuItem(scene.c_str(), nullptr, scene == current_scene)) {
+                        current_scene = scene;
+                        if(current_scene == "Ship") objects[0] = &spaceship_object;
+                        if(current_scene == "Peter Panning") objects[0] = &peter_pan_plane_object;
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
+        }
+
+        float depth_bias_offset = shadowmap_rasterizer.depthBiasSlopeFactor;
+        ImGui::SliderFloat("Depth bias offset", &shadowmap_rasterizer.depthBiasSlopeFactor, 0.0, 10.0);
+        if(shadowmap_rasterizer.depthBiasSlopeFactor != depth_bias_offset) {
+            regenerate_shadowmap_pipeline = true;
+        }
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
@@ -873,6 +925,21 @@ int main() {
         bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
         bg_ubo.camera_pos = camera_position;
         write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
+
+        if(regenerate_shadowmap_pipeline) {
+            vkDeviceWaitIdle(vk_device);
+            vkDestroyPipeline(vk_device, shadowmap_pipeline, nullptr);
+            shadowmap_pipeline = create_graphics_pipeline(
+                vk_device,
+                shadowmap_pipeline_layout,
+                render_pass,
+                { model_attributes.first },
+                model_attributes.second,
+                shadowmap_vert_shader_module,
+                shadowmap_frag_shader_module,
+                shadowmap_rasterizer
+            );
+        }
 
         // Render frame
         vkWaitForFences(vk_device, 1, &frame_in_flight[current_frame], VK_TRUE, UINT64_MAX);
@@ -1021,6 +1088,8 @@ int main() {
     vkDeviceWaitIdle(vk_device);
 
     // Clean up
+    vkDestroyShaderModule(vk_device, shadowmap_vert_shader_module, nullptr);
+    vkDestroyShaderModule(vk_device, shadowmap_frag_shader_module, nullptr);
     for(auto& m : landingpad_model.m_materials) {
         if(m.m_name == "TV_Screen") m.m_emission_texture = {};
     }
@@ -1047,6 +1116,7 @@ int main() {
     for(auto& model : models) model->destroy(vk_device);
     vkDestroyDescriptorSetLayout(vk_device, material_descriptor_set_layout, nullptr);
     vkDestroySampler(vk_device, sampler, nullptr);
+    vkDestroySampler(vk_device, shadow_sampler, nullptr);
     for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);
     for(auto s : render_finished) vkDestroySemaphore(vk_device, s, nullptr);
     for(auto s : image_avaiable) vkDestroySemaphore(vk_device, s, nullptr);
