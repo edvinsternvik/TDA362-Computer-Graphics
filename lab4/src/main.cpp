@@ -390,6 +390,7 @@ int main() {
         { bg_position_attribute },
         bg_vert_shader_module,
         bg_frag_shader_module,
+        std::nullopt,
         bg_depth_stencil
     );
 

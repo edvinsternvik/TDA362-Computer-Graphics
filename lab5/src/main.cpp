@@ -126,7 +126,7 @@ int main() {
         create_framebuffer_complete(
             vk_device, physical_device,
             command_pool, graphics_queue,
-            render_pass, surface_info.capabilities.currentExtent,
+            render_pass, surface_info.capabilities.currentExtent, VK_IMAGE_USAGE_SAMPLED_BIT,
             &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
         );
     }
@@ -139,7 +139,7 @@ int main() {
         create_framebuffer_complete(
             vk_device, physical_device,
             command_pool, graphics_queue,
-            render_pass, {640, 480},
+            render_pass, {640, 480}, VK_IMAGE_USAGE_SAMPLED_BIT,
             &security_framebuffers[i], &security_color_textures[i], &security_depth_textures[i]
         );
     }
@@ -415,6 +415,7 @@ int main() {
         { quad_position_attribute },
         bg_vert_shader_module,
         bg_frag_shader_module,
+        std::nullopt,
         bg_depth_stencil
     );
 
@@ -503,6 +504,7 @@ int main() {
         { quad_position_attribute },
         postfx_vert_shader_module,
         postfx_frag_shader_module,
+        std::nullopt,
         postfx_depth_stencil
     );
 
@@ -1042,7 +1044,7 @@ int main() {
                 create_framebuffer_complete(
                     vk_device, physical_device,
                     command_pool, graphics_queue,
-                    render_pass, surface_info.capabilities.currentExtent,
+                    render_pass, surface_info.capabilities.currentExtent, VK_IMAGE_USAGE_SAMPLED_BIT,
                     &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
                 );
             }
@@ -1180,7 +1182,7 @@ int main() {
                 create_framebuffer_complete(
                     vk_device, physical_device,
                     command_pool, graphics_queue,
-                    render_pass, surface_info.capabilities.currentExtent,
+                    render_pass, surface_info.capabilities.currentExtent, VK_IMAGE_USAGE_SAMPLED_BIT,
                     &main_framebuffers[i], &main_color_textures[i], &main_depth_textures[i]
                 );
             }
