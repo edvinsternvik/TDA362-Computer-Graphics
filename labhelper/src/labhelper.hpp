@@ -165,6 +165,12 @@ VkImage create_image(
     uint32_t mip_levels
 );
 
+VkImageView create_image_view(
+    VkDevice device,
+    VkFormat format, VkImageAspectFlags aspect_mask, uint32_t mip_levels,
+    VkImage image
+);
+
 uint32_t get_suitable_memory_type_index(
     VkPhysicalDevice physical_device,
     VkMemoryRequirements mem_requirements,

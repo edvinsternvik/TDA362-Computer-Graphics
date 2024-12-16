@@ -141,22 +141,11 @@ Texture load_texture_from_image(
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
 
-    {
-        VkImageViewCreateInfo create_info = {};
-        create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        create_info.image = texture.m_image;
-        create_info.format = VK_FORMAT_R8G8B8A8_SRGB;
-        create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        create_info.subresourceRange.baseMipLevel = 0;
-        create_info.subresourceRange.levelCount = texture.m_mip_levels;
-        create_info.subresourceRange.baseArrayLayer = 0;
-        create_info.subresourceRange.layerCount = 1;
-        VK_HANDLE_ERROR(
-            vkCreateImageView(device, &create_info, nullptr, &texture.m_image_view),
-            "Could not create image view"
-        );
-    }
+    texture.m_image_view = create_image_view(
+        device,
+        VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT,
+        texture.m_mip_levels, texture.m_image
+    );
 
     return texture;
 }
@@ -748,6 +737,30 @@ VkImage create_image(
     return image;
 };
 
+VkImageView create_image_view(
+    VkDevice device,
+    VkFormat format, VkImageAspectFlags aspect_mask, uint32_t mip_levels,
+    VkImage image
+) {
+    VkImageViewCreateInfo create_info = {};
+    create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    create_info.image = image;
+    create_info.format = format;
+    create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    create_info.subresourceRange.aspectMask = aspect_mask;
+    create_info.subresourceRange.baseMipLevel = 0;
+    create_info.subresourceRange.levelCount = mip_levels;
+    create_info.subresourceRange.baseArrayLayer = 0;
+    create_info.subresourceRange.layerCount = 1;
+
+    VkImageView image_view;
+    VK_HANDLE_ERROR(
+        vkCreateImageView(device, &create_info, nullptr, &image_view),
+        "Could not create image view"
+    );
+    return image_view;
+}
+
 uint32_t get_suitable_memory_type_index(
     VkPhysicalDevice physical_device,
     VkMemoryRequirements mem_requirements,
@@ -889,20 +902,8 @@ std::vector<VkImageView> create_swapchain_image_views(
 
     std::vector<VkImageView> swapchain_image_views(swapchain_image_count);
     for(size_t i = 0; i < swapchain_image_count; ++i) {
-        VkImageViewCreateInfo view_create_info = {};
-        view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-        view_create_info.image = swapchain_images[i];
-        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_create_info.format = image_format;
-        view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        view_create_info.subresourceRange.baseMipLevel = 0;
-        view_create_info.subresourceRange.levelCount = 1;
-        view_create_info.subresourceRange.baseArrayLayer = 0;
-        view_create_info.subresourceRange.layerCount = 1;
-
-        VK_HANDLE_ERROR(
-            vkCreateImageView(device, &view_create_info, nullptr, &swapchain_image_views[i]),
-            "Could not create image view"
+        swapchain_image_views[i] = create_image_view(
+            device, image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1, swapchain_images[i]
         );
     }
 
@@ -1153,17 +1154,9 @@ void create_depth_buffer(
         *depth_image
     );
 
-    VkImageViewCreateInfo depth_view_create_info = {};
-    depth_view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    depth_view_create_info.image = *depth_image;
-    depth_view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    depth_view_create_info.format = VK_FORMAT_D32_SFLOAT;
-    depth_view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    depth_view_create_info.subresourceRange.baseMipLevel = 0;
-    depth_view_create_info.subresourceRange.levelCount = 1;
-    depth_view_create_info.subresourceRange.baseArrayLayer = 0;
-    depth_view_create_info.subresourceRange.layerCount = 1;
-    vkCreateImageView(device, &depth_view_create_info, nullptr, depth_image_view);
+    *depth_image_view = create_image_view(
+        device, VK_FORMAT_D32_SFLOAT, VK_IMAGE_ASPECT_DEPTH_BIT, 1, *depth_image
+    );
 
     transition_image_layout(
         device,
@@ -1228,17 +1221,9 @@ void create_framebuffer_complete(
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         color_texture->m_image
     );
-    VkImageViewCreateInfo view_create_info = {};
-    view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view_create_info.image = color_texture->m_image;
-    view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    view_create_info.format = VK_FORMAT_B8G8R8A8_SRGB;
-    view_create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    view_create_info.subresourceRange.baseMipLevel = 0;
-    view_create_info.subresourceRange.levelCount = 1;
-    view_create_info.subresourceRange.baseArrayLayer = 0;
-    view_create_info.subresourceRange.layerCount = 1;
-    vkCreateImageView(device, &view_create_info, nullptr, &color_texture->m_image_view);
+    color_texture->m_image_view = create_image_view(
+        device, VK_FORMAT_B8G8R8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, 1, color_texture->m_image
+    );
     transition_image_layout(
         device,
         command_pool,
