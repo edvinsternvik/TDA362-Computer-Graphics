@@ -246,6 +246,17 @@ Model load_model_from_file(
         vertices.data(), sizeof(Vertex) * vertices.size()
     );
 
+    // Store vertex data on CPU
+    model.m_positions = std::vector<glm::vec3>(vertices.size());
+    model.m_normals = std::vector<glm::vec3>(vertices.size());
+    model.m_texture_coordinates = std::vector<glm::vec2>(vertices.size());
+    for(size_t i = 0; i < vertices.size(); ++i) {
+        const Vertex& vertex = vertices[i];
+        model.m_positions[i] = glm::vec3(vertex.x, vertex.y, vertex.z);
+        model.m_normals[i] = glm::vec3(vertex.nx, vertex.ny, vertex.nz);
+        model.m_texture_coordinates[i] = glm::vec2(vertex.u, vertex.v);
+    }
+
     return model;
 }
 

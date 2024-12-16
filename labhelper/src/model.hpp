@@ -42,6 +42,10 @@ struct Model {
     VkBuffer m_vertex_buffer;
     VkDeviceMemory m_vertex_buffer_memory;
     std::vector<Mesh> m_meshes;
+
+    std::vector<glm::vec3> m_positions;
+    std::vector<glm::vec3> m_normals;
+    std::vector<glm::vec2> m_texture_coordinates;
 };
 
 Model load_model_from_file(
