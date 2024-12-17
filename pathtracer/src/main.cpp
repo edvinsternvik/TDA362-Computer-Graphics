@@ -57,10 +57,10 @@ int main() {
     // Initialize path tracer
 	pathtracer::settings.max_bounces = 8;
 	pathtracer::settings.max_paths_per_pixel = 0; // 0 = Infinite
-#ifdef _DEBUG
-	pathtracer::settings.subsampling = 16;
+#ifdef NDEBUG
+	pathtracer::settings.subsampling = 1;
 #else
-	pathtracer::settings.subsampling = 4;
+	pathtracer::settings.subsampling = 16;
 #endif
 
 	pathtracer::point_light.intensity_multiplier = 2500.0f;
@@ -132,16 +132,16 @@ int main() {
     sampler_create_info.maxLod = VK_LOD_CLAMP_NONE;
     sampler_create_info.compareEnable = VK_FALSE;
     sampler_create_info.compareOp = VK_COMPARE_OP_ALWAYS;
-    sampler_create_info.minFilter = VK_FILTER_LINEAR;
-    sampler_create_info.magFilter = VK_FILTER_LINEAR;
-    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler_create_info.minFilter = VK_FILTER_NEAREST;
+    sampler_create_info.magFilter = VK_FILTER_NEAREST;
+    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
     sampler_create_info.mipLodBias = 0.0f;
     sampler_create_info.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.anisotropyEnable = VK_TRUE;
-    sampler_create_info.maxAnisotropy = device_properties.limits.maxSamplerAnisotropy;
+    sampler_create_info.anisotropyEnable = VK_FALSE;
+    sampler_create_info.maxAnisotropy = 0;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
@@ -263,9 +263,9 @@ int main() {
         vk_device, physical_device, command_pool, graphics_queue,
         "scenes/space-ship.obj"
     );
-    Model materialtest_model = load_model_from_file(
+    Model landingpad_model = load_model_from_file(
         vk_device, physical_device, command_pool, graphics_queue,
-        "scenes/materialtest.obj"
+        "scenes/landingpad.obj"
     );
     Model sphere_model = load_model_from_file(
         vk_device, physical_device, command_pool, graphics_queue,
@@ -273,21 +273,21 @@ int main() {
     );
     std::vector<Model*> models = {
         &spaceship_model,
-        &materialtest_model,
+        &landingpad_model,
         &sphere_model
     };
 
     Object spaceship_object = {};
-    spaceship_object.position = glm::vec3(0.0, 0.0, 0.0);
+    spaceship_object.position = glm::vec3(0.0, 0.8, 0.0);
     spaceship_object.orientation = glm::identity<glm::quat>();
     spaceship_object.scale = glm::one<glm::vec3>();
     spaceship_object.m_model_index = 0;
 
-    Object materialtest_object = {};
-    materialtest_object.position = glm::vec3(0.0, 0.0, 0.0);
-    materialtest_object.orientation = glm::identity<glm::quat>();
-    materialtest_object.scale = glm::one<glm::vec3>();
-    materialtest_object.m_model_index = 1;
+    Object landingpad_object = {};
+    landingpad_object.position = glm::vec3(0.0, 0.0, 0.0);
+    landingpad_object.orientation = glm::identity<glm::quat>();
+    landingpad_object.scale = glm::one<glm::vec3>();
+    landingpad_object.m_model_index = 1;
 
     Object light_object = {};
     light_object.position = glm::vec3(20.0, 20.0, 20.0);
@@ -297,7 +297,7 @@ int main() {
 
     std::vector<Object*> objects = {
         &spaceship_object,
-        /* &materialtest_object, */
+        &landingpad_object,
         &light_object
     };
 
@@ -367,8 +367,8 @@ int main() {
 
     uint32_t current_frame = 0;
     bool framebuffer_resized = false;
-    glm::vec3 camera_position = -glm::vec3(-30.0, 10.0, 30.0);
-    glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 5.0, 30.0));
+    glm::vec3 camera_position = -glm::vec3(-30.0, 15.0, 30.0);
+    glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 8.0, 30.0));
 
     auto start_time = std::chrono::high_resolution_clock::now();
     float previous_frame_time = 0.0f;

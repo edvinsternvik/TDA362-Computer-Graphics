@@ -2,6 +2,8 @@
 #include <algorithm>
 #include "material.hpp"
 #include "embree.hpp"
+#include "sampling.hpp"
+#include <omp.h>
 
 using namespace std;
 using namespace glm;
@@ -82,10 +84,19 @@ vec3 Li(Ray& primary_ray) {
 
 	Diffuse diffuse(hit.material->m_data.m_color);
 	BTDF& mat = diffuse;
+
+    // Shoot shadow ray
+    vec3 shadow_ray_origin = hit.position + EPSILON * hit.geometry_normal;
+    vec3 shadow_ray_delta = point_light.position - shadow_ray_origin;
+    Ray shadow_ray = Ray(
+        shadow_ray_origin, normalize(shadow_ray_delta),
+        0.0, length(shadow_ray_delta)
+    );
+
 	///////////////////////////////////////////////////////////////////
 	// Calculate Direct Illumination from light.
 	///////////////////////////////////////////////////////////////////
-	{
+	if(!occluded(shadow_ray)) {
 		const float distance_to_light = length(point_light.position - hit.position);
 		const float falloff_factor = 1.0f / (distance_to_light * distance_to_light);
 		vec3 Li = point_light.intensity_multiplier * point_light.color * falloff_factor;
@@ -108,8 +119,9 @@ inline static glm::vec3 homogenize(const glm::vec4& p) {
 ///////////////////////////////////////////////////////////////////////////
 void trace_paths(const glm::mat4& V, const glm::mat4& P) {
 	// Stop here if we have as many samples as we want
-	if((rendered_image.number_of_samples > settings.max_paths_per_pixel)
-	   && (settings.max_paths_per_pixel != 0)) {
+    if(rendered_image.number_of_samples > settings.max_paths_per_pixel
+        && settings.max_paths_per_pixel != 0
+    ) {
         return;
 	}
 	vec3 camera_pos = vec3(glm::inverse(V) * vec4(0.0f, 0.0f, 0.0f, 1.0f));
@@ -127,8 +139,8 @@ void trace_paths(const glm::mat4& V, const glm::mat4& P) {
 			// Create a ray that starts in the camera position and points toward
 			// the current pixel on a virtual screen.
 			vec2 screen_coords = vec2(
-                float(x) / float(rendered_image.width),
-			    float(y) / float(rendered_image.height)
+                (float(x) + randf()) / float(rendered_image.width),
+			    (float(y) + randf()) / float(rendered_image.height)
             );
 			// Calculate direction
 			vec4 view_coords = vec4(
