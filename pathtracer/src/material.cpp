@@ -32,7 +32,21 @@ WiSample Diffuse::sample_wi(const vec3& wo, const vec3& n) const {
 }
 
 vec3 MicrofacetBRDF::f(const vec3& wi, const vec3& wo, const vec3& n) const {
-	return vec3(0.0f);
+    vec3 wh = normalize(wi + wo);
+
+    float n_dot_wh = dot(n, wh);
+    float n_dot_wi = dot(n, wi);
+    float n_dot_wo = dot(n, wo);
+    float wi_dot_wo = dot(wi, wo);
+    float wo_dot_wh = dot(wo, wh);
+
+    float D = (shininess + 2.0) * pow(n_dot_wh, shininess)
+        / (2.0 * pi<float>());
+    float G = min(
+        1.0,
+        (2.0 * n_dot_wh / wo_dot_wh) * min(n_dot_wo, n_dot_wh)
+    );
+	return vec3(D * G / (4.0 * n_dot_wo * n_dot_wi));
 }
 
 WiSample MicrofacetBRDF::sample_wi(const vec3& wo, const vec3& n) const {
@@ -44,12 +58,16 @@ WiSample MicrofacetBRDF::sample_wi(const vec3& wo, const vec3& n) const {
 
 
 float BSDF::fresnel(const vec3& wi, const vec3& wo) const {
-	return 0.0f;
+    vec3 wh = normalize(wi + wo);
+	return R0 + (1.0 - R0) * pow(1.0 - dot(wh, wi), 5.0);
 }
 
 
 vec3 DielectricBSDF::f(const vec3& wi, const vec3& wo, const vec3& n) const {
-	return vec3(0);
+    float F = fresnel(wi, wo);
+    vec3 BRDF = reflective_material->f(wi, wo, n);
+    vec3 BTDF = transmissive_material->f(wi, wo, n);
+	return F * BRDF + (1.0f - F) * BTDF;
 }
 
 WiSample DielectricBSDF::sample_wi(const vec3& wo, const vec3& n) const {
@@ -62,7 +80,9 @@ WiSample DielectricBSDF::sample_wi(const vec3& wo, const vec3& n) const {
 }
 
 vec3 MetalBSDF::f(const vec3& wi, const vec3& wo, const vec3& n) const {
-	return vec3(0);
+    float F = fresnel(wi, wo);
+    vec3 BRDF = reflective_material->f(wi, wo, n);
+	return F * BRDF * color;
 }
 
 WiSample MetalBSDF::sample_wi(const vec3& wo, const vec3& n) const {
@@ -74,7 +94,7 @@ WiSample MetalBSDF::sample_wi(const vec3& wo, const vec3& n) const {
 
 
 vec3 BSDFLinearBlend::f(const vec3& wi, const vec3& wo, const vec3& n) const {
-	return vec3(0.0);
+    return w * bsdf0->f(wi, wo, n) + (1.0f - w) * bsdf1->f(wi, wo, n);
 }
 
 WiSample BSDFLinearBlend::sample_wi(const vec3& wo, const vec3& n) const {

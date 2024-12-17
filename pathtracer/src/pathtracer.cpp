@@ -83,7 +83,11 @@ vec3 Li(Ray& primary_ray) {
 	///////////////////////////////////////////////////////////////////
 
 	Diffuse diffuse(hit.material->m_data.m_color);
-	BTDF& mat = diffuse;
+    MicrofacetBRDF microfacet(hit.material->m_data.m_roughness);
+    DielectricBSDF dielectric(&microfacet, &diffuse, hit.material->m_data.m_fresnel);
+    MetalBSDF metal(&microfacet, hit.material->m_data.m_color, hit.material->m_data.m_fresnel);
+    BSDFLinearBlend metal_blend(hit.material->m_data.m_metalic, &metal, &dielectric);
+    BSDF& mat = metal_blend;
 
     // Shoot shadow ray
     vec3 shadow_ray_origin = hit.position + EPSILON * hit.geometry_normal;
