@@ -124,7 +124,7 @@ Intersection get_intersection(const Ray& r) {
 	vec3 n2 = model->m_normals[((mesh->m_start_index / 3) + r.primID) * 3 + 2];
 	float w = 1.0f - (r.u + r.v);
 	i.shading_normal = normalize(w * n0 + r.u * n1 + r.v * n2);
-	i.geometry_normal = -normalize(r.n);
+	i.geometry_normal = normalize(r.n);
 	i.position = r.o + r.tfar * r.d;
 	i.wo = normalize(-r.d);
 
