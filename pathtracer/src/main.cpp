@@ -56,7 +56,7 @@ int main() {
 
     // Initialize path tracer
 	pathtracer::settings.max_bounces = 8;
-	pathtracer::settings.max_paths_per_pixel = 0; // 0 = Infinite
+	pathtracer::settings.max_paths_per_pixel = 1024;
 #ifdef NDEBUG
 	pathtracer::settings.subsampling = 1;
 #else
@@ -278,7 +278,7 @@ int main() {
     };
 
     Object spaceship_object = {};
-    spaceship_object.position = glm::vec3(0.0, 0.8, 0.0);
+    spaceship_object.position = glm::vec3(0.0, 8.0, 0.0);
     spaceship_object.orientation = glm::identity<glm::quat>();
     spaceship_object.scale = glm::one<glm::vec3>();
     spaceship_object.m_model_index = 0;
@@ -467,6 +467,13 @@ int main() {
         vkCmdDraw(command_buffer, vertices.size(), 1, 0, 0);
 
         imgui_new_frame();
+		ImGui::SliderInt("Subsampling", &pathtracer::settings.subsampling, 1, 16);
+		ImGui::SliderInt("Max Bounces", &pathtracer::settings.max_bounces, 0, 16);
+		ImGui::SliderInt("Max Paths Per Pixel", &pathtracer::settings.max_paths_per_pixel, 0, 1024);
+		if(ImGui::Button("Restart Pathtracing")) {
+			pathtracer::restart();
+		}
+		ImGui::Text("Num. samples: %d", pathtracer::get_sample_count());
         imgui_render(command_buffer);
 
         vkCmdEndRenderPass(command_buffer);
@@ -499,6 +506,7 @@ int main() {
         if(keyboard_state[SDL_SCANCODE_D]) kb_input += glm::vec3(1.0, 0.0, 0.0);
         if(keyboard_state[SDL_SCANCODE_Q]) kb_input += glm::vec3(0.0, 1.0, 0.0);
         if(keyboard_state[SDL_SCANCODE_E]) kb_input += glm::vec3(0.0, -1.0, 0.0);
+        if(kb_input != glm::zero<glm::vec3>()) pathtracer::restart();
 
         int mouse_dx, mouse_dy;
         SDL_GetRelativeMouseState(&mouse_dx, &mouse_dy);
@@ -514,6 +522,8 @@ int main() {
             camera_forward =
                 camera_forward
                 * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dy, camera_right);
+
+            pathtracer::restart();
         }
         camera_right = glm::normalize(glm::cross(camera_forward, world_up));
         glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_forward));
