@@ -290,7 +290,7 @@ int main() {
     landingpad_object.m_model_index = 1;
 
     Object light_object = {};
-    light_object.position = glm::vec3(20.0, 20.0, 20.0);
+    light_object.position = glm::vec3(10.0, 25.0, 20.0);
     light_object.orientation = glm::identity<glm::quat>();
     light_object.scale = 0.1f * glm::one<glm::vec3>();
     light_object.m_model_index = 2;
@@ -298,7 +298,7 @@ int main() {
     std::vector<Object*> objects = {
         &spaceship_object,
         &landingpad_object,
-        &light_object
+        /* &light_object */
     };
 
     // Add objects to pathtracer

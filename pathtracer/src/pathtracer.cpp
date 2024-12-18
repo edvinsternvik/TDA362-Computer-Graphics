@@ -73,40 +73,66 @@ vec3 Li(Ray& primary_ray) {
 	vec3 path_throughput = vec3(1.0);
 	Ray current_ray = primary_ray;
 
-	///////////////////////////////////////////////////////////////////
-	// Get the intersection information from the ray
-	///////////////////////////////////////////////////////////////////
-	Intersection hit = get_intersection(current_ray);
-	///////////////////////////////////////////////////////////////////
-	// Create a Material tree for evaluating brdfs and calculating
-	// sample directions.
-	///////////////////////////////////////////////////////////////////
+    for(size_t bounces = 0; bounces < settings.max_bounces; ++bounces) {
+        ///////////////////////////////////////////////////////////////////
+        // Get the intersection information from the ray
+        ///////////////////////////////////////////////////////////////////
+        Intersection hit = get_intersection(current_ray);
 
-	Diffuse diffuse(hit.material->m_data.m_color);
-    MicrofacetBRDF microfacet(hit.material->m_data.m_roughness);
-    DielectricBSDF dielectric(&microfacet, &diffuse, hit.material->m_data.m_fresnel);
-    MetalBSDF metal(&microfacet, hit.material->m_data.m_color, hit.material->m_data.m_fresnel);
-    BSDFLinearBlend metal_blend(hit.material->m_data.m_metalic, &metal, &dielectric);
-    BSDF& mat = metal_blend;
+        ///////////////////////////////////////////////////////////////////
+        // Create a Material tree for evaluating brdfs and calculating
+        // sample directions.
+        ///////////////////////////////////////////////////////////////////
+        Diffuse diffuse(hit.material->m_data.m_color);
+        MicrofacetBRDF microfacet(hit.material->m_data.m_roughness);
+        DielectricBSDF dielectric(&microfacet, &diffuse, hit.material->m_data.m_fresnel);
+        BSDF& mat = dielectric;
+        /* MetalBSDF metal(&microfacet, hit.material->m_data.m_color, hit.material->m_data.m_fresnel); */
+        /* BSDFLinearBlend metal_blend(hit.material->m_data.m_metalic, &metal, &dielectric); */
+        /* BSDF& mat = metal_blend; */
+        /* BTDF& mat = diffuse; */
 
-    // Shoot shadow ray
-    vec3 shadow_ray_origin = hit.position + EPSILON * hit.geometry_normal;
-    vec3 shadow_ray_delta = point_light.position - shadow_ray_origin;
-    Ray shadow_ray = Ray(
-        shadow_ray_origin, normalize(shadow_ray_delta),
-        0.0, length(shadow_ray_delta)
-    );
+        // Shoot shadow ray
+        vec3 ray_hit_origin = hit.position + EPSILON * hit.geometry_normal;
+        vec3 shadow_ray_delta = point_light.position - ray_hit_origin;
+        Ray shadow_ray = Ray(
+            ray_hit_origin, normalize(shadow_ray_delta),
+            0.0, length(shadow_ray_delta)
+        );
 
-	///////////////////////////////////////////////////////////////////
-	// Calculate Direct Illumination from light.
-	///////////////////////////////////////////////////////////////////
-	if(!occluded(shadow_ray)) {
-		const float distance_to_light = length(point_light.position - hit.position);
-		const float falloff_factor = 1.0f / (distance_to_light * distance_to_light);
-		vec3 Li = point_light.intensity_multiplier * point_light.color * falloff_factor;
-		vec3 wi = normalize(point_light.position - hit.position);
-		L = mat.f(wi, hit.wo, hit.shading_normal) * Li * std::max(0.0f, dot(wi, hit.shading_normal));
-	}
+        ///////////////////////////////////////////////////////////////////
+        // Calculate Direct Illumination from light.
+        ///////////////////////////////////////////////////////////////////
+        if(!occluded(shadow_ray)) {
+            const float distance_to_light = length(point_light.position - hit.position);
+            const float falloff_factor = 1.0f / (distance_to_light * distance_to_light);
+            vec3 Li = point_light.intensity_multiplier * point_light.color * falloff_factor;
+            vec3 wi = normalize(point_light.position - hit.position);
+            vec3 direct_illumination =
+                mat.f(wi, hit.wo, hit.shading_normal)
+                * Li
+                * std::max(0.0f, dot(wi, hit.shading_normal));
+
+            L += path_throughput * direct_illumination;
+        }
+
+        // Add emitted radiance
+        L += path_throughput * hit.material->m_data.m_emission;
+
+        // Sample incoming
+        WiSample incoming = mat.sample_wi(hit.wo, hit.shading_normal);
+        if(incoming.pdf < EPSILON) return L;
+
+        float cosineterm = abs(dot(incoming.wi, hit.shading_normal));
+        path_throughput = path_throughput * (incoming.f * cosineterm) / incoming.pdf;
+        if(path_throughput == vec3(0, 0, 0)) return L;
+
+        current_ray = Ray(ray_hit_origin, incoming.wi, 0.0, FLT_MAX);
+
+        if(!intersect(current_ray)) {
+            return L + path_throughput * Lenvironment(current_ray.direction);
+        }
+    }
 	// Return the final outgoing radiance for the primary ray
 	return L;
 }

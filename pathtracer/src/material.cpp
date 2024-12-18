@@ -50,7 +50,29 @@ vec3 MicrofacetBRDF::f(const vec3& wi, const vec3& wo, const vec3& n) const {
 }
 
 WiSample MicrofacetBRDF::sample_wi(const vec3& wo, const vec3& n) const {
-	WiSample r = sample_hemisphere_cosine(wo, n);
+    WiSample r;
+
+    vec3 tangent1 = cross(n, vec3(1.0, 0.0, 0.0));
+    vec3 tangent2 = cross(n, vec3(0.0, 1.0, 0.0));
+    vec3 tangent = dot(tangent1, tangent1) > dot(tangent2, tangent2)
+        ? tangent1 : tangent2;
+    tangent = normalize(tangent);
+    vec3 bitangent = normalize(cross(tangent, n));
+    float phi = 2.0f * M_PI * randf();
+    float cos_theta = pow(randf(), 1.0f / (shininess + 1));
+    float sin_theta = sqrt(max(0.0f, 1.0f - cos_theta * cos_theta));
+    vec3 wh = normalize(
+        sin_theta * cos(phi) * tangent + 
+        sin_theta * sin(phi) * bitangent + 
+        cos_theta * n
+    );
+    float p_wh = (shininess + 1.0) * pow(dot(n, wh), shininess) / (2.0 * M_PI);
+
+    vec3 wi = normalize(reflect(wo, wh));
+    float p_wi = p_wh / (4.0 * dot(wo, wh));
+
+    r.wi = wi;
+    r.pdf = p_wi;
 	r.f = f(r.wi, wo, n);
 
 	return r;
@@ -72,6 +94,16 @@ vec3 DielectricBSDF::f(const vec3& wi, const vec3& wo, const vec3& n) const {
 
 WiSample DielectricBSDF::sample_wi(const vec3& wo, const vec3& n) const {
 	WiSample r;
+
+    if(randf() < 0.5) {
+        r = reflective_material->sample_wi(wo, n);
+        r.f *= fresnel(r.wi, wo);
+    }
+    else {
+        r = transmissive_material->sample_wi(wo, n);
+        r.f *= (1.0 - fresnel(r.wi, wo));
+    }
+    r.pdf *= 0.5;
 
 	r = sample_hemisphere_cosine(wo, n);
 	r.f = f(r.wi, wo, n);
