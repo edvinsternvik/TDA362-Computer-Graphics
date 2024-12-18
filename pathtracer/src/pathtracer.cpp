@@ -139,7 +139,7 @@ void trace_paths(const glm::mat4& V, const glm::mat4& P) {
 		for(int x = 0; x < rendered_image.width; x++) {
 			vec3 color;
 			Ray primary_ray;
-			primary_ray.o = camera_pos;
+			primary_ray.origin = camera_pos;
 			// Create a ray that starts in the camera position and points toward
 			// the current pixel on a virtual screen.
 			vec2 screen_coords = vec2(
@@ -153,7 +153,7 @@ void trace_paths(const glm::mat4& V, const glm::mat4& P) {
                 1.0f, 1.0f
             );
 			vec3 p = homogenize(inverse(P * V) * view_coords);
-			primary_ray.d = normalize(p - camera_pos);
+			primary_ray.direction = normalize(p - camera_pos);
 			// Intersect ray with scene
 			if(intersect(primary_ray)) {
 				// If it hit something, evaluate the radiance from that point
@@ -161,7 +161,7 @@ void trace_paths(const glm::mat4& V, const glm::mat4& P) {
 			}
 			else {
 				// Otherwise evaluate environment
-				color = Lenvironment(primary_ray.d);
+				color = Lenvironment(primary_ray.direction);
 			}
 			// Accumulate the obtained radiance to the pixels color
 			float n = float(rendered_image.number_of_samples);

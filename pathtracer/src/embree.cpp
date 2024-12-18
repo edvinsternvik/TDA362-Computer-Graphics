@@ -13,6 +13,22 @@ using namespace std;
 using namespace glm;
 
 namespace pathtracer {
+RTCRay ray_to_rtc_ray(const Ray& ray) {
+    RTCRay rtc_ray = {};
+    rtc_ray.org_x = ray.origin.x;
+    rtc_ray.org_y = ray.origin.y;
+    rtc_ray.org_z = ray.origin.z;
+    rtc_ray.dir_x = ray.direction.x;
+    rtc_ray.dir_y = ray.direction.y;
+    rtc_ray.dir_z = ray.direction.z;
+    rtc_ray.tnear = ray.tnear;
+    rtc_ray.tfar = ray.tfar;
+    rtc_ray.mask = ~0;
+    rtc_ray.flags = 0;
+
+    return rtc_ray;
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // Global variables
 ///////////////////////////////////////////////////////////////////////////
@@ -124,9 +140,9 @@ Intersection get_intersection(const Ray& r) {
 	vec3 n2 = model->m_normals[((mesh->m_start_index / 3) + r.primID) * 3 + 2];
 	float w = 1.0f - (r.u + r.v);
 	i.shading_normal = normalize(w * n0 + r.u * n1 + r.v * n2);
-	i.geometry_normal = normalize(r.n);
-	i.position = r.o + r.tfar * r.d;
-	i.wo = normalize(-r.d);
+	i.geometry_normal = normalize(r.normal);
+	i.position = r.origin + r.tfar * r.direction;
+	i.wo = normalize(-r.direction);
 
     assert((((mesh->m_start_index / 3) + r.primID) * 3 + 3) <= model->m_texture_coordinates.size());
 	vec2 uv0 = model->m_texture_coordinates[((mesh->m_start_index / 3) + r.primID) * 3 + 0];
@@ -141,40 +157,24 @@ Intersection get_intersection(const Ray& r) {
 ///////////////////////////////////////////////////////////////////////////
 bool intersect(Ray& r) {
     struct RTCRayHit rayhit = {};
-    rayhit.ray.org_x = r.o.x;
-    rayhit.ray.org_y = r.o.y;
-    rayhit.ray.org_z = r.o.z;
-    rayhit.ray.tnear = r.tnear;
-    rayhit.ray.dir_x = r.d.x;
-    rayhit.ray.dir_y = r.d.y;
-    rayhit.ray.dir_z = r.d.z;
-    rayhit.ray.time = r.time;
-    rayhit.ray.tfar = r.tfar;
-    rayhit.ray.mask = r.mask;
-    rayhit.ray.flags = 0;
-    rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
-    rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+    rayhit.ray = ray_to_rtc_ray(r);
+    rayhit.hit.geomID = r.geomID;
+    rayhit.hit.primID = r.primID;
+    rayhit.hit.instID[0] = r.instID;
 
     rtcIntersect1(embree_scene, &rayhit);
-    r.o.x = rayhit.ray.org_x;
-    r.o.y = rayhit.ray.org_y;
-    r.o.z = rayhit.ray.org_z;
-    r.d.x = rayhit.ray.dir_x;
-    r.d.y = rayhit.ray.dir_y;
-    r.d.z = rayhit.ray.dir_z;
-    r.tnear = rayhit.ray.tnear;
+
     r.tfar = rayhit.ray.tfar;
-    r.time = rayhit.ray.time;
-    r.mask = rayhit.ray.mask;
-    r.n.x = rayhit.hit.Ng_x;
-    r.n.y = rayhit.hit.Ng_y;
-    r.n.z = rayhit.hit.Ng_z;
+    r.normal.x = rayhit.hit.Ng_x;
+    r.normal.y = rayhit.hit.Ng_y;
+    r.normal.z = rayhit.hit.Ng_z;
     r.u = rayhit.hit.u;
     r.v = rayhit.hit.v;
     r.geomID = rayhit.hit.geomID;
     r.primID = rayhit.hit.primID;
     r.instID = rayhit.hit.instID[0];
-	return rayhit.hit.geomID != RTC_INVALID_GEOMETRY_ID;
+
+	return r.geomID != RTC_INVALID_GEOMETRY_ID;
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -182,32 +182,10 @@ bool intersect(Ray& r) {
 // intersection).
 ///////////////////////////////////////////////////////////////////////////
 bool occluded(Ray& r) {
-    struct RTCRay ray = {};
-    ray.org_x = r.o.x;
-    ray.org_y = r.o.y;
-    ray.org_z = r.o.z;
-    ray.tnear = r.tnear;
-    ray.dir_x = r.d.x;
-    ray.dir_y = r.d.y;
-    ray.dir_z = r.d.z;
-    ray.time = r.time;
-    ray.tfar = r.tfar;
-    ray.mask = r.mask;
-    ray.time = r.time;
-    ray.flags = 0;
-
+    RTCRay ray = ray_to_rtc_ray(r);
     rtcOccluded1(embree_scene, &ray);
-    r.o.x = ray.org_x;
-    r.o.y = ray.org_y;
-    r.o.z = ray.org_z;
-    r.d.x = ray.dir_x;
-    r.d.y = ray.dir_y;
-    r.d.z = ray.dir_z;
-    r.tnear = ray.tnear;
-    r.tfar = ray.tfar;
-    r.time = ray.time;
-    r.mask = ray.mask;
 
+    r.tfar = ray.tfar;
     return ray.tfar == -std::numeric_limits<float>::infinity();
 }
 } // namespace pathtracer

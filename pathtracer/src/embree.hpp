@@ -41,7 +41,7 @@ struct Ray {
 	    float near = 0.0f,
 	    float far = FLT_MAX
     )
-        : o(origin), d(direction), tnear(near), tfar(far)
+        : origin(origin), direction(direction), tnear(near), tfar(far)
 	{
 		geomID = RTC_INVALID_GEOMETRY_ID;
 		primID = RTC_INVALID_GEOMETRY_ID;
@@ -51,28 +51,12 @@ struct Ray {
 	////////////////////////////
 	// Ray data
 
-	// `o`: origin position of the ray
-	glm::vec3 o;
-	float align0;
-
-	// `d`: direction of the ray
-	glm::vec3 d;
-	float align1;
-
-	// `tnear`, `tfar`: starting distance and final distance to look for intersections
+	glm::vec3 origin;
+	glm::vec3 direction;
 	float tnear = 0.0f, tfar = FLT_MAX;
-	float time = 0.0f;
-	uint32_t mask = 0xFFFFFFFF;
-
-
-	////////////////////////////
-	// Hit Data (do not modify)
 
 	// Normal of the surface
-	glm::vec3 n;
-	float align2;
-
-	// UV of the intersected triangle
+	glm::vec3 normal;
 	float u, v;
 
 	uint32_t geomID = RTC_INVALID_GEOMETRY_ID;
