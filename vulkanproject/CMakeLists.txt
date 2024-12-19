@@ -35,6 +35,18 @@ add_custom_command(
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/vulkanproject"
 )
 add_custom_command(
+    OUTPUT depth_normal_vert.spv
+    COMMAND glslc src/depth_normal_shader.vert -o depth_normal_vert.spv
+    DEPENDS src/depth_normal_shader.vert
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/vulkanproject"
+)
+add_custom_command(
+    OUTPUT depth_normal_frag.spv
+    COMMAND glslc src/depth_normal_shader.frag -o depth_normal_frag.spv
+    DEPENDS src/depth_normal_shader.frag
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/vulkanproject"
+)
+add_custom_command(
     OUTPUT shadowmap_vert.spv
     COMMAND glslc src/shadowmap_shader.vert -o shadowmap_vert.spv
     DEPENDS src/shadowmap_shader.vert
@@ -47,7 +59,7 @@ add_custom_command(
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/vulkanproject"
 )
 add_custom_target(generate_shaders_vulkanproject
-    DEPENDS vert.spv frag.spv bg_vert.spv bg_frag.spv shadowmap_vert.spv shadowmap_frag.spv
+    DEPENDS vert.spv frag.spv bg_vert.spv bg_frag.spv depth_normal_vert.spv depth_normal_frag.spv shadowmap_vert.spv shadowmap_frag.spv
 )
 
 add_dependencies(vulkanproject generate_shaders_vulkanproject)

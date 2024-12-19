@@ -32,7 +32,7 @@ layout(set = 1, binding = 0) uniform GlobalUBO {
 layout(set = 1, binding = 1) uniform sampler2D env_sampler;
 layout(set = 1, binding = 2) uniform sampler2D irradiance_sampler;
 layout(set = 1, binding = 3) uniform sampler2D reflection_sampler;
-layout(set = 1, binding = 4) uniform sampler2DShadow shadowmap_sampler;
+// layout(set = 1, binding = 4) uniform sampler2DShadow shadowmap_sampler;
 // layout(set = 1, binding = 4) uniform sampler2D shadowmap_sampler;
 
 layout(location = 0) out vec4 out_color;
@@ -147,7 +147,8 @@ void main() {
 
     // float depth = texture(shadowmap_sampler, in_shadow_map_coords.xy / in_shadow_map_coords.w).x;
     // float visibility = (depth >= (in_shadow_map_coords.z / in_shadow_map_coords.w)) ? 1.0 : 0.0;
-    float visibility = textureProj(shadowmap_sampler, in_shadow_map_coords);
+    // float visibility = textureProj(shadowmap_sampler, in_shadow_map_coords);
+    float visibility = 1.0;
 
     vec3 dir_elim_term = visibility * direct_illumination(wo, normal, base_color);
 
