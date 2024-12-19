@@ -74,6 +74,13 @@ struct SurfaceInfo {
     VkSurfaceCapabilitiesKHR capabilities;
 };
 
+void begin_render_pass(
+    VkCommandBuffer command_buffer,
+    VkRenderPass render_pass,
+    VkFramebuffer framebuffer,
+    VkExtent2D render_extent
+);
+
 void init_vulkan(
     SDL_Window* window,
     VkInstance* vk_instance,
@@ -251,7 +258,8 @@ void create_framebuffer_complete(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
     VkRenderPass render_pass, VkExtent2D extent, VkImageUsageFlags image_usage,
-    VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture
+    VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture,
+    VkFormat format = VK_FORMAT_B8G8R8_SRGB
 );
 
 void recreate_swapchain(

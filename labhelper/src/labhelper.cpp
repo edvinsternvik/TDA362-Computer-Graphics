@@ -150,6 +150,47 @@ Texture load_texture_from_image(
     return texture;
 }
 
+void begin_render_pass(
+    VkCommandBuffer command_buffer,
+    VkRenderPass render_pass,
+    VkFramebuffer framebuffer,
+    VkExtent2D render_extent
+) {
+    VkCommandBufferBeginInfo begin_info = {};
+    begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    VK_HANDLE_ERROR(
+        vkBeginCommandBuffer(command_buffer, &begin_info),
+        "Could not begin command buffer"
+    );
+
+    std::array<VkClearValue, 2> clear_values = {};
+    clear_values[0].color = {};
+    clear_values[1].depthStencil = { 1.0f, 0 };
+    VkViewport viewport = {};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = render_extent.width;
+    viewport.height = render_extent.height;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    VkRect2D scissor = {};
+    scissor.offset = { 0, 0 };
+    scissor.extent = render_extent;
+
+    VkRenderPassBeginInfo render_pass_begin_info = {};
+    render_pass_begin_info = {};
+    render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    render_pass_begin_info.renderPass = render_pass;
+    render_pass_begin_info.framebuffer = framebuffer;
+    render_pass_begin_info.renderArea.offset = {0, 0};
+    render_pass_begin_info.renderArea.extent = render_extent;
+    render_pass_begin_info.clearValueCount = clear_values.size();
+    render_pass_begin_info.pClearValues = clear_values.data();
+    vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+}
+
 void init_vulkan(
     SDL_Window* window,
     VkInstance* vk_instance,
@@ -1203,7 +1244,8 @@ void create_framebuffer_complete(
     VkDevice device, VkPhysicalDevice physical_device,
     VkCommandPool command_pool, VkQueue command_queue,
     VkRenderPass render_pass, VkExtent2D extent, VkImageUsageFlags image_usage,
-    VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture
+    VkFramebuffer* framebuffer, Texture* color_texture, Texture* depth_texture,
+    VkFormat format
 ) {
     color_texture->m_width = extent.width;
     color_texture->m_height = extent.height;
@@ -1212,7 +1254,7 @@ void create_framebuffer_complete(
     color_texture->m_image = create_image(
         device,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | image_usage,
-        VK_FORMAT_B8G8R8A8_SRGB,
+        format,
         VK_IMAGE_TILING_OPTIMAL,
         extent.width, extent.height, 1
     );
@@ -1222,14 +1264,14 @@ void create_framebuffer_complete(
         color_texture->m_image
     );
     color_texture->m_image_view = create_image_view(
-        device, VK_FORMAT_B8G8R8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT, 1, color_texture->m_image
+        device, format, VK_IMAGE_ASPECT_COLOR_BIT, 1, color_texture->m_image
     );
     transition_image_layout(
         device,
         command_pool,
         command_queue,
         color_texture->m_image,
-        VK_FORMAT_B8G8R8A8_SRGB,
+        format,
         VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         1
