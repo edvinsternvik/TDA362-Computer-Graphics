@@ -624,6 +624,7 @@ int main() {
         glm::mat4 inv_pv;
         glm::mat4 projection_matrix;
         glm::mat4 inv_projection_matrix;
+        std::array<glm::vec4, 128> samples;
     };
 
     VkBuffer ssao_ubo_buffer = create_buffer(
@@ -778,6 +779,9 @@ int main() {
     ssao_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
     ssao_ubo.projection_matrix = projection_matrix;
     ssao_ubo.inv_projection_matrix = glm::inverse(projection_matrix);
+    for(size_t i = 0; i < ssao_ubo.samples.size(); ++i) {
+        ssao_ubo.samples[i] = glm::vec4(cosine_sample_hemisphere(), 0.0);
+    }
 
     // ------------------------------------------------------------
     // Render passes

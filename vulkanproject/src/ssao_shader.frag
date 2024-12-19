@@ -6,6 +6,7 @@ layout(binding = 0) uniform SSAOUBO {
     mat4 inv_pv;
     mat4 projection_matrix;
     mat4 inv_projection_matrix;
+    vec4 samples[128];
 };
 layout(binding = 1) uniform sampler2D normal_sampler;
 layout(binding = 2) uniform sampler2D depth_sampler;
@@ -29,8 +30,7 @@ vec3 perpendicular(vec3 v) {
 }
 
 // PCG random generator for 3 16-bit unsigned ints
-uvec3 pcg3d16(uvec3 v)
-{
+uvec3 pcg3d16(uvec3 v) {
 	v = v * 12829u + 47989u;
 
 	v.x += v.y * v.z;
@@ -46,8 +46,7 @@ uvec3 pcg3d16(uvec3 v)
 }
 
 // Conversion function to move from floats to uints, and back
-vec3 pcg3d16f(vec3 v)
-{
+vec3 pcg3d16f(vec3 v) {
 	uvec3 uv = floatBitsToUint(v);
 	uv ^= uv >> 16u; // Make the info be contained in the lower 16 bits
 
@@ -73,21 +72,6 @@ vec3 pcg3d16f(vec3 v)
 
 #define randf pcg3d16f
 
-vec3 sampleHemisphereVolumeCosine(float idx)
-{
-	vec3 r = randf(vec3(gl_FragCoord.xy, idx));	
-	vec3 ret;
-	r.x *= 2 * PI;
-	r.y = sqrt(r.y);
-	r.y = min(r.y, 0.99);
-	r.z = max(0.1, r.z);
-
-	ret.x = r.y * cos(r.x);
-	ret.y = r.y * sin(r.x);
-	ret.z = sqrt(max(0, 1 - dot(ret.xy, ret.xy)));
-	return ret * r.z;
-}
-
 void main() {
     float frag_depth = texture(depth_sampler, in_uv).r;
     vec4 ndc = vec4(
@@ -101,13 +85,21 @@ void main() {
     vec3 vs_bitangent = cross(vs_normal, vs_tangent);
     mat3 tbn = mat3(vs_tangent, vs_bitangent, vs_normal);
 
+	float theta = randf(gl_FragCoord.xyz).x
+        * 2.0 * PI;
+    mat3 sample_rot = mat3(
+        vec3(cos(theta), sin(theta), 0.0),
+        vec3(-sin(theta), cos(theta), 0.0),
+        vec3(0.0, 0.0, 1.0)
+    );
+
     float hemisphere_radius = 0.8;
-    int nof_samples = 8;
+    int nof_samples = 128;
     float visibility = 0.0;
     float bias = 0.1;
     for(int i = 0; i < nof_samples; i++) {
         // Project an hemishere sample onto the local base
-        vec3 s = tbn * sampleHemisphereVolumeCosine(i);
+        vec3 s = tbn * sample_rot * samples[i].xyz;
 
         // compute view-space position of sample
         vec3 vs_sample_position = vs_pos + s * hemisphere_radius;

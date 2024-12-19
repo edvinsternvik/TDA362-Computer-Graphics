@@ -1457,3 +1457,66 @@ void imgui_cleanup(VkDevice device, VkDescriptorPool imgui_descriptor_pool) {
     ImGui::DestroyContext();
     vkDestroyDescriptorPool(device, imgui_descriptor_pool, nullptr);
 }
+
+
+float randf() {
+	return float(rand()) / float(RAND_MAX);
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Generate uniform points on a disc
+// We use Shirleys square-to-circle mapping to convert the 2 randf samples to
+// the disk.
+// https://www.pbr-book.org/3ed-2018/Monte_Carlo_Integration/2D_Sampling_with_Multidimensional_Transformations#SamplingaUnitDisk
+// This approach is not really necessary in our case, since we use a prng to
+// obtain our random numbers, but it's helpful to know about it because it
+// provides notable improvements when using stratified sampling:
+// https://www.pbr-book.org/3ed-2018/Monte_Carlo_Integration/Careful_Sample_Placement#sec:warping-distortion
+// The commented-out section is a bit faster.
+///////////////////////////////////////////////////////////////////////////
+glm::vec2 concentric_sample_disk() {
+	float r, theta;
+	float u1 = randf();
+	float u2 = randf();
+	// Map uniform random numbers to $[-1,1]^2$
+	float sx = 2 * u1 - 1;
+	float sy = 2 * u2 - 1;
+	// Map square to $(r,\theta)$
+	// Handle degeneracy at the origin
+	if(sx == 0.0 && sy == 0.0) {
+		return glm::vec2(0, 0);
+	}
+	if(sx >= -sy) {
+		if(sx > sy) { // Handle first region of disk
+			r = sx;
+			if(sy > 0.0) theta = sy / r;
+			else theta = 8.0f + sy / r;
+		}
+		else { // Handle second region of disk
+			r = sy;
+			theta = 2.0f - sx / r;
+		}
+	}
+	else {
+		if(sx <= sy) { // Handle third region of disk
+			r = -sx;
+			theta = 4.0f - sy / r;
+		}
+		else { // Handle fourth region of disk
+			r = -sy;
+			theta = 6.0f + sx / r;
+		}
+	}
+	theta *= float(M_PI) / 4.0f;
+	return glm::vec2(r * cosf(theta), r * sinf(theta));
+}
+
+///////////////////////////////////////////////////////////////////////////
+// Generate points with a cosine distribution on the hemisphere
+///////////////////////////////////////////////////////////////////////////
+glm::vec3 cosine_sample_hemisphere() {
+	glm::vec3 ret(concentric_sample_disk(), 0);
+	ret.z = sqrt(glm::max(0.f, 1.f - ret.x * ret.x - ret.y * ret.y));
+	return ret;
+}
+

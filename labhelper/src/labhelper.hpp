@@ -6,6 +6,7 @@
 #include <SDL2/SDL_vulkan.h>
 #include <vulkan/vulkan_core.h>
 #include <stb_image.h>
+#include <glm/glm.hpp>
 
 #define VK_HANDLE_ERROR(X, msg) if(X != VK_SUCCESS) { throw std::runtime_error(msg); }
 
@@ -296,3 +297,8 @@ VkDescriptorPool imgui_init(
 void imgui_new_frame();
 void imgui_render(VkCommandBuffer command_buffer);
 void imgui_cleanup(VkDevice device, VkDescriptorPool imgui_descriptor_pool);
+
+float randf();
+glm::vec2 concentric_sample_disk();
+glm::vec3 cosine_sample_hemisphere();
+
