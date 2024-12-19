@@ -61,9 +61,6 @@ WiSample MicrofacetBRDF::sample_wi(const vec3& wo, const vec3& n) const {
     float sin_theta = sqrt(max(0.0f, 1.0f - cos_theta * cos_theta));
     vec3 wh = vec3(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta);
     wh = normalize(tangent_space(n) * wh);
-    if(!same_hemisphere(wh, wo, n)) {
-        wh = reflect(wh, n);
-    }
     float p_wh = (shininess + 1.0) * pow(dot(n, wh), shininess) / (2.0 * M_PI);
 
     vec3 wi = -normalize(reflect(wo, wh));
