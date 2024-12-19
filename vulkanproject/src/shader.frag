@@ -162,7 +162,7 @@ void main() {
     }
 
     vec3 indir_elim_term = indirect_illumination(wo, normal, base_color);
-    indir_elim_term *= pow(texture(ssao_sampler, gl_FragCoord.xy / viewport_size).r, 8.0);
+    indir_elim_term *= pow(texture(ssao_sampler, gl_FragCoord.xy / viewport_size).r, 4.0);
 
 	out_color = vec4(dir_elim_term + emission_term + indir_elim_term, 1.0);
 
