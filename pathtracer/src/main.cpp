@@ -301,24 +301,34 @@ int main() {
     refractions_object.m_model_index = 3;
 
     // Spaceship scene
-    /* std::vector<Object*> objects = { */
-    /*     &spaceship_object, */
-    /*     &landingpad_object, */
-    /* }; */
-    /* glm::vec3 camera_position = -glm::vec3(-30.0, 15.0, 30.0); */
-    /* glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 8.0, 30.0)); */
-
-    // Refractions scene
-    std::vector<Object*> objects = {
-        &refractions_object,
+    struct Scene {
+        const char* name;
+        std::vector<Object*> objects;
+        glm::vec3 camera_position, camera_forward;
     };
-    glm::vec3 camera_forward = glm::normalize(glm::vec3(-0.43, -0.27, -0.85));
-    glm::vec3 camera_position = -glm::vec3(9.0, 4.3, 10.6);
+
+    std::vector<Scene> scenes = {
+        // Spaceship scene
+        Scene {
+            "Spaceship",
+            { &spaceship_object, &landingpad_object, },
+            -glm::vec3(-30.0, 15.0, 30.0),
+            glm::normalize(-glm::vec3(-30.0, 8.0, 30.0))
+        },
+        // Refraction scene
+        Scene {
+            "Refractions",
+            { &refractions_object },
+            -glm::vec3(9.0, 4.3, 10.6),
+            glm::normalize(glm::vec3(-0.43, -0.27, -0.85))
+        }
+    };
+    Scene scene = scenes[0];
 
     // Add objects to pathtracer
 	pathtracer::reinit_scene();
 
-	for(const auto& o : objects) {
+	for(const auto& o : scene.objects) {
         glm::mat4 model_matrix = glm::identity<glm::mat4>()
             * glm::translate(glm::identity<glm::mat4>(), o->position)
             * glm::mat4_cast(o->orientation)
@@ -391,7 +401,11 @@ int main() {
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
     auto render_frame = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
-        mat4 viewMatrix = lookAt(-camera_position, -camera_position + camera_forward, glm::vec3(0, 1, 0));
+        mat4 viewMatrix = lookAt(
+            -scene.camera_position,
+            -scene.camera_position + scene.camera_forward,
+            glm::vec3(0, 1, 0)
+        );
         mat4 projMatrix = perspective(
             radians(45.0f),
             float(pathtracer::rendered_image.width) / float(pathtracer::rendered_image.height), 
@@ -483,6 +497,29 @@ int main() {
 
         imgui_new_frame();
 
+        if(ImGui::BeginCombo("Scene", scene.name)) {
+            for(const Scene& s : scenes) {
+                if(ImGui::Selectable(s.name, strcmp(s.name, scene.name) == 0)) {
+                    scene = s;
+
+                    pathtracer::reinit_scene();
+
+                    for(const auto& o : scene.objects) {
+                        glm::mat4 model_matrix = glm::identity<glm::mat4>()
+                            * glm::translate(glm::identity<glm::mat4>(), o->position)
+                            * glm::mat4_cast(o->orientation)
+                            * glm::scale(glm::identity<glm::mat4>(), o->scale);
+
+                        pathtracer::add_model(models[o->m_model_index], model_matrix);
+                    }
+                    pathtracer::build_bvh();
+
+                    pathtracer::restart();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
         if(ImGui::CollapsingHeader("Pathtracing")) {
             ImGui::SliderInt("Subsampling", &pathtracer::settings.subsampling, 1, 16);
             ImGui::SliderInt("Max Bounces", &pathtracer::settings.max_bounces, 0, 16);
@@ -564,23 +601,23 @@ int main() {
         uint32_t mouse_state = SDL_GetMouseState(nullptr, nullptr);
         glm::vec3 world_up = glm::vec3(0.0, 1.0, 0.0);
 
-        glm::vec3 camera_right = glm::normalize(glm::cross(camera_forward, world_up));
+        glm::vec3 camera_right = glm::normalize(glm::cross(scene.camera_forward, world_up));
         if(SDL_BUTTON_RMASK & mouse_state) {
-            camera_forward =
-                camera_forward
+            scene.camera_forward =
+                scene.camera_forward
                 * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dx, world_up);
-            camera_forward =
-                camera_forward
+            scene.camera_forward =
+                scene.camera_forward
                 * glm::rotate(glm::identity<glm::quat>(), 0.5f * delta_time * (float)mouse_dy, camera_right);
 
             pathtracer::restart();
         }
-        camera_right = glm::normalize(glm::cross(camera_forward, world_up));
-        glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, camera_forward));
+        camera_right = glm::normalize(glm::cross(scene.camera_forward, world_up));
+        glm::vec3 camera_up = glm::normalize(glm::cross(camera_right, scene.camera_forward));
 
-        glm::mat3 camera_basis = glm::mat3(camera_right, camera_up, -camera_forward);
+        glm::mat3 camera_basis = glm::mat3(camera_right, camera_up, -scene.camera_forward);
         if(SDL_BUTTON_RMASK & mouse_state) {
-            camera_position -= camera_basis * kb_input * delta_time * 10.0f;
+            scene.camera_position -= camera_basis * kb_input * delta_time * 10.0f;
         }
 
         // Render frame
