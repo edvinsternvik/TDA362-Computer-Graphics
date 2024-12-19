@@ -271,10 +271,15 @@ int main() {
         vk_device, physical_device, command_pool, graphics_queue,
         "scenes/sphere.obj"
     );
+    Model refractions_model = load_model_from_file(
+        vk_device, physical_device, command_pool, graphics_queue,
+        "scenes/refractions.obj"
+    );
     std::vector<Model*> models = {
         &spaceship_model,
         &landingpad_model,
-        &sphere_model
+        &sphere_model,
+        &refractions_model
     };
 
     Object spaceship_object = {};
@@ -289,17 +294,26 @@ int main() {
     landingpad_object.scale = glm::one<glm::vec3>();
     landingpad_object.m_model_index = 1;
 
-    Object light_object = {};
-    light_object.position = glm::vec3(10.0, 25.0, 20.0);
-    light_object.orientation = glm::identity<glm::quat>();
-    light_object.scale = 0.1f * glm::one<glm::vec3>();
-    light_object.m_model_index = 2;
+    Object refractions_object = {};
+    refractions_object.position = glm::vec3(0.0, 0.0, 0.0);
+    refractions_object.orientation = glm::identity<glm::quat>();
+    refractions_object.scale = glm::one<glm::vec3>();
+    refractions_object.m_model_index = 3;
 
+    // Spaceship scene
+    /* std::vector<Object*> objects = { */
+    /*     &spaceship_object, */
+    /*     &landingpad_object, */
+    /* }; */
+    /* glm::vec3 camera_position = -glm::vec3(-30.0, 15.0, 30.0); */
+    /* glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 8.0, 30.0)); */
+
+    // Refractions scene
     std::vector<Object*> objects = {
-        &spaceship_object,
-        &landingpad_object,
-        /* &light_object */
+        &refractions_object,
     };
+    glm::vec3 camera_forward = glm::normalize(glm::vec3(-0.43, -0.27, -0.85));
+    glm::vec3 camera_position = -glm::vec3(9.0, 4.3, 10.6);
 
     // Add objects to pathtracer
 	pathtracer::reinit_scene();
@@ -367,11 +381,12 @@ int main() {
 
     uint32_t current_frame = 0;
     bool framebuffer_resized = false;
-    glm::vec3 camera_position = -glm::vec3(-30.0, 15.0, 30.0);
-    glm::vec3 camera_forward = glm::normalize(-glm::vec3(-30.0, 8.0, 30.0));
 
     auto start_time = std::chrono::high_resolution_clock::now();
     float previous_frame_time = 0.0f;
+
+    Model* selected_model = models[0];
+    Mesh* selected_mesh = &selected_model->m_meshes[0];
 
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
@@ -467,12 +482,47 @@ int main() {
         vkCmdDraw(command_buffer, vertices.size(), 1, 0, 0);
 
         imgui_new_frame();
-		ImGui::SliderInt("Subsampling", &pathtracer::settings.subsampling, 1, 16);
-		ImGui::SliderInt("Max Bounces", &pathtracer::settings.max_bounces, 0, 16);
-		ImGui::SliderInt("Max Paths Per Pixel", &pathtracer::settings.max_paths_per_pixel, 0, 1024);
-		if(ImGui::Button("Restart Pathtracing")) {
-			pathtracer::restart();
-		}
+
+        if(ImGui::CollapsingHeader("Pathtracing")) {
+            ImGui::SliderInt("Subsampling", &pathtracer::settings.subsampling, 1, 16);
+            ImGui::SliderInt("Max Bounces", &pathtracer::settings.max_bounces, 0, 16);
+            ImGui::SliderInt("Max Paths Per Pixel", &pathtracer::settings.max_paths_per_pixel, 0, 1024);
+            if(ImGui::Button("Restart Pathtracing")) {
+                pathtracer::restart();
+            }
+        }
+
+        if(ImGui::CollapsingHeader("Models")) {
+            if(ImGui::BeginCombo("Model", selected_model->m_name.c_str())) {
+                for(Model* model : models) {
+                    if(ImGui::Selectable(model->m_name.c_str(), model == selected_model)) {
+                        selected_model = model;
+                        selected_mesh = &selected_model->m_meshes[0];
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if(ImGui::BeginCombo("Meshes", selected_mesh->m_name.c_str())) {
+                for(Mesh& mesh : selected_model->m_meshes) {
+                    if(ImGui::Selectable(mesh.m_name.c_str(), &mesh == selected_mesh)) {
+                        selected_mesh = &mesh;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if(ImGui::CollapsingHeader("Material")) {
+                Material& material = selected_model->m_materials[selected_mesh->m_material_index];
+                MaterialData& mat_data = material.m_data;
+                ImGui::LabelText("Material Name", "%s", material.m_name.c_str());
+                ImGui::ColorEdit3("Color", &mat_data.m_color.x);
+                ImGui::SliderFloat("Metalness", &mat_data.m_metalic, 0.0f, 1.0f);
+                ImGui::SliderFloat("Fresnel", &mat_data.m_fresnel, 0.0f, 1.0f);
+                ImGui::SliderFloat("Shininess", &mat_data.m_roughness, 0.0f, 5000.0f, "%.3f", 2);
+                ImGui::ColorEdit3("Emission", &mat_data.m_emission.x);
+                ImGui::SliderFloat("Transparency", &mat_data.m_transparency, 0.0f, 1.0f);
+                ImGui::SliderFloat("IoR", &mat_data.m_ior, 0.1f, 3.0f);
+            }
+        }
 		ImGui::Text("Num. samples: %d", pathtracer::get_sample_count());
         imgui_render(command_buffer);
 
