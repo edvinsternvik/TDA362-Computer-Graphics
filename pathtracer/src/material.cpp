@@ -61,6 +61,9 @@ WiSample MicrofacetBRDF::sample_wi(const vec3& wo, const vec3& n) const {
     float sin_theta = sqrt(max(0.0f, 1.0f - cos_theta * cos_theta));
     vec3 wh = vec3(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta);
     wh = normalize(tangent_space(n) * wh);
+    if(!same_hemisphere(wh, wo, n)) {
+        wh = reflect(wh, n);
+    }
     float p_wh = (shininess + 1.0) * pow(dot(n, wh), shininess) / (2.0 * M_PI);
 
     vec3 wi = -normalize(reflect(wo, wh));
@@ -100,7 +103,9 @@ WiSample DielectricBSDF::sample_wi(const vec3& wo, const vec3& n) const {
     }
     else {
         r = transmissive_material->sample_wi(wo, n);
-        r.f *= (1.0f - fresnel(r.wi, wo));
+        if(same_hemisphere(r.wi, wo, n)) {
+            r.f *= (1.0f - fresnel(r.wi, wo));
+        }
     }
     r.pdf *= 0.5;
 
@@ -141,7 +146,6 @@ WiSample BSDFLinearBlend::sample_wi(const vec3& wo, const vec3& n) const {
 }
 
 
-#if SOLUTION_PROJECT == PROJECT_REFRACTIONS
 ///////////////////////////////////////////////////////////////////////////
 // A perfect specular refraction.
 ///////////////////////////////////////////////////////////////////////////
@@ -167,17 +171,6 @@ WiSample GlassBTDF::sample_wi(const vec3& wo, const vec3& n) const {
 		N = -n;
 		eta = ior;
 	}
-
-	// Alternatively:
-	// d = dot(wo, N)
-	// k = d * d (1 - eta*eta)
-	// wi = normalize(-eta * wo + (d * eta - sqrt(k)) * N)
-
-	// or
-
-	// d = dot(n, wo)
-	// k = 1 - eta*eta * (1 - d * d)
-	// wi = - eta * wo + ( eta * d - sqrt(k) ) * N
 
 	float w = dot(wo, N) * eta;
 	float k = 1.0f + (w - eta) * (w + eta);
@@ -209,6 +202,4 @@ WiSample BTDFLinearBlend::sample_wi(const vec3& wo, const vec3& n) const {
 		return r;
 	}
 }
-
-#endif
 } // namespace pathtracer

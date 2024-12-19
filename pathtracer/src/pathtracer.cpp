@@ -84,17 +84,19 @@ vec3 Li(Ray& primary_ray) {
         // sample directions.
         ///////////////////////////////////////////////////////////////////
         Diffuse diffuse(hit.material->m_data.m_color);
+        GlassBTDF glass(hit.material->m_data.m_ior);
+        BTDFLinearBlend btdf_blend(hit.material->m_data.m_transparency, &glass, &diffuse);
         MicrofacetBRDF microfacet(hit.material->m_data.m_roughness);
-        DielectricBSDF dielectric(&microfacet, &diffuse, hit.material->m_data.m_fresnel);
+        DielectricBSDF dielectric(&microfacet, &btdf_blend, hit.material->m_data.m_fresnel);
         MetalBSDF metal(&microfacet, hit.material->m_data.m_color, hit.material->m_data.m_fresnel);
         BSDFLinearBlend metal_blend(hit.material->m_data.m_metalic, &metal, &dielectric);
         BSDF& mat = metal_blend;
 
         // Shoot shadow ray
-        vec3 ray_hit_origin = hit.position + EPSILON * hit.geometry_normal;
-        vec3 shadow_ray_delta = point_light.position - ray_hit_origin;
+        vec3 shadow_ray_origin = hit.position + EPSILON * hit.geometry_normal;
+        vec3 shadow_ray_delta = point_light.position - shadow_ray_origin;
         Ray shadow_ray = Ray(
-            ray_hit_origin, normalize(shadow_ray_delta),
+            shadow_ray_origin, normalize(shadow_ray_delta),
             0.0, length(shadow_ray_delta)
         );
 
@@ -125,7 +127,10 @@ vec3 Li(Ray& primary_ray) {
         path_throughput = path_throughput * (incoming.f * cosineterm) / incoming.pdf;
         if(path_throughput == vec3(0, 0, 0)) return L;
 
-        current_ray = Ray(ray_hit_origin, incoming.wi, 0.0, FLT_MAX);
+        vec3 next_ray_origin = hit.position
+            + sign(dot(hit.geometry_normal, incoming.wi))
+            * EPSILON * hit.geometry_normal;
+        current_ray = Ray(next_ray_origin, incoming.wi, 0.0, FLT_MAX);
 
         if(!intersect(current_ray)) {
             return L + path_throughput * Lenvironment(current_ray.direction);
