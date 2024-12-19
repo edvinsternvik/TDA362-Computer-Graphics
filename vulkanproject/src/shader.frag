@@ -28,12 +28,15 @@ layout(set = 1, binding = 0) uniform GlobalUBO {
     vec3 light_color;
     float env_multiplier;
     vec3 light_view_dir;
+    float _pad;
+    vec2 viewport_size;
 };
 layout(set = 1, binding = 1) uniform sampler2D env_sampler;
 layout(set = 1, binding = 2) uniform sampler2D irradiance_sampler;
 layout(set = 1, binding = 3) uniform sampler2D reflection_sampler;
 // layout(set = 1, binding = 4) uniform sampler2DShadow shadowmap_sampler;
 // layout(set = 1, binding = 4) uniform sampler2D shadowmap_sampler;
+layout(set = 1, binding = 5) uniform sampler2D ssao_sampler;
 
 layout(location = 0) out vec4 out_color;
 
@@ -159,6 +162,7 @@ void main() {
     }
 
     vec3 indir_elim_term = indirect_illumination(wo, normal, base_color);
+    indir_elim_term *= pow(texture(ssao_sampler, gl_FragCoord.xy / viewport_size).r, 8.0);
 
 	out_color = vec4(dir_elim_term + emission_term + indir_elim_term, 1.0);
 

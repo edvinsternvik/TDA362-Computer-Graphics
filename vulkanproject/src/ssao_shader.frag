@@ -7,6 +7,8 @@ layout(binding = 0) uniform SSAOUBO {
     mat4 projection_matrix;
     mat4 inv_projection_matrix;
     vec4 samples[128];
+    float hemisphere_radius;
+    int nof_samples;
 };
 layout(binding = 1) uniform sampler2D normal_sampler;
 layout(binding = 2) uniform sampler2D depth_sampler;
@@ -93,10 +95,8 @@ void main() {
         vec3(0.0, 0.0, 1.0)
     );
 
-    float hemisphere_radius = 0.8;
-    int nof_samples = 128;
-    float visibility = 0.0;
-    float bias = 0.1;
+    int num_visible_samples = 0; 
+    int num_valid_samples = 0; 
     for(int i = 0; i < nof_samples; i++) {
         // Project an hemishere sample onto the local base
         vec3 s = tbn * sample_rot * samples[i].xyz;
@@ -116,11 +116,18 @@ void main() {
             vec4(sample_coords_ndc.xy, blocker_depth, 1.0)
         );
 
-        float range_check = smoothstep(0.0, 1.0, hemisphere_radius / abs(vs_blocker_pos.z - vs_sample_position.z));
-        visibility += (vs_blocker_pos.z >= vs_sample_position.z + bias ? 1.0 : 0.0) * range_check;
+        if(abs(vs_blocker_pos.z) >= abs(vs_sample_position.z)) {
+            num_valid_samples += 1;
+            num_visible_samples += 1;
+        }
+        else if(distance(vs_pos, vs_blocker_pos) <= hemisphere_radius) {
+            num_valid_samples += 1;
+        }
     }
+    float visibility = 1.0;
+    if(num_valid_samples > 0) visibility = float(num_visible_samples) / float(num_valid_samples);
 
-    visibility = 1.0 - visibility / float(nof_samples);
+    // visibility = 1.0 - visibility / float(nof_samples);
 
     out_color = vec4(vec3(visibility), 1.0);
 }

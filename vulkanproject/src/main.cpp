@@ -246,6 +246,8 @@ int main() {
         reflection_lods.size()
     );
 
+    auto model_attributes = create_model_attributes();
+
     // Create quad
     VkVertexInputBindingDescription quad_binding_description = {};
     quad_binding_description.binding = 0;
@@ -368,6 +370,165 @@ int main() {
     );
 
     // ------------------------------------------------------------
+    // G-buffer pipeline
+    // ------------------------------------------------------------
+
+    // Create render pass
+    VkAttachmentDescription normal_attachment = color_attachment;
+    normal_attachment.format = VK_FORMAT_R16G16B16A16_SNORM;
+
+    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+    VkRenderPass gbuffer_render_pass = create_render_pass(
+        vk_device, 
+        normal_attachment, depth_attachment
+    );
+
+    // G-buffer framebuffers
+    VkFramebuffer gbuffer_framebuffer;
+    Texture gbuffer_normals_texture;
+    Texture gbuffer_depth_texture;
+    create_framebuffer_complete(
+        vk_device, physical_device,
+        command_pool, graphics_queue,
+        gbuffer_render_pass, surface_info.capabilities.currentExtent, VK_IMAGE_USAGE_SAMPLED_BIT,
+        &gbuffer_framebuffer, &gbuffer_normals_texture, &gbuffer_depth_texture,
+        normal_attachment.format
+    );
+
+    std::vector<char> gbuffer_vert_shader_src = read_file("vulkanproject/gbuffer_vert.spv");
+    std::vector<char> gbuffer_frag_shader_src = read_file("vulkanproject/gbuffer_frag.spv");
+    VkShaderModule gbuffer_vert_shader_module = create_shader_module(
+        vk_device, gbuffer_vert_shader_src
+    );
+    VkShaderModule gbuffer_frag_shader_module = create_shader_module(
+        vk_device, gbuffer_frag_shader_src
+    );
+
+    // Pipeline
+    VkPipelineLayout gbuffer_pipeline_layout = create_pipeline_layout(
+        vk_device,
+        { material_descriptor_set_layout }
+    );
+
+    VkPipeline gbuffer_pipeline = create_graphics_pipeline(
+        vk_device,
+        gbuffer_pipeline_layout,
+        gbuffer_render_pass,
+        { model_attributes.first },
+        model_attributes.second,
+        gbuffer_vert_shader_module,
+        gbuffer_frag_shader_module
+    );
+
+    vkDestroyShaderModule(vk_device, gbuffer_vert_shader_module, nullptr);
+    vkDestroyShaderModule(vk_device, gbuffer_frag_shader_module, nullptr);
+
+    // ------------------------------------------------------------
+    // SSAO pipeline
+    // ------------------------------------------------------------
+    VkFramebuffer ssao_framebuffer;
+    Texture ssao_color_texture;
+    Texture ssao_depth_texture;
+    create_framebuffer_complete(
+        vk_device, physical_device,
+        command_pool, graphics_queue,
+        render_pass, surface_info.capabilities.currentExtent, VK_IMAGE_USAGE_SAMPLED_BIT,
+        &ssao_framebuffer, &ssao_color_texture, &ssao_depth_texture
+    );
+
+    // Shader
+    std::vector<char> ssao_vert_shader_src = read_file("vulkanproject/ssao_vert.spv");
+    std::vector<char> ssao_frag_shader_src = read_file("vulkanproject/ssao_frag.spv");
+    VkShaderModule ssao_vert_shader_module = create_shader_module(
+        vk_device, ssao_vert_shader_src
+    );
+    VkShaderModule ssao_frag_shader_module = create_shader_module(
+        vk_device, ssao_frag_shader_src
+    );
+
+    // Descriptors
+    struct SSAOUniformBlock {
+        glm::mat4 inv_pv;
+        glm::mat4 projection_matrix;
+        glm::mat4 inv_projection_matrix;
+        std::array<glm::vec4, 128> samples;
+        float hemisphere_radius;
+        int nof_samples;
+    };
+
+    VkBuffer ssao_ubo_buffer = create_buffer(
+        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(SSAOUniformBlock)
+    );
+    VkDeviceMemory ssao_ubo_memory = allocate_buffer_memory(
+        vk_device, physical_device,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        ssao_ubo_buffer
+    );
+    std::vector<DescriptorInfo> ssao_descriptors = {
+        {
+            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::make_optional(ssao_ubo_buffer), std::make_optional(sizeof(SSAOUniformBlock)),
+            std::nullopt, std::nullopt
+        },
+        {
+            1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(gbuffer_normals_texture.m_image_view), std::make_optional(sampler)
+        },
+        {
+            2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(gbuffer_depth_texture.m_image_view), std::make_optional(sampler)
+        }
+    };
+
+    VkDescriptorPool ssao_descriptor_pool;
+    VkDescriptorSetLayout ssao_descriptor_set_layout;
+    VkDescriptorSet ssao_descriptor_set;
+    create_descriptors(
+        vk_device,
+        &ssao_descriptor_pool,
+        &ssao_descriptor_set_layout, &ssao_descriptor_set,
+        ssao_descriptors
+    );
+
+    update_descriptors(vk_device, ssao_descriptor_set, ssao_descriptors);
+
+    // Pipeline
+    VkPipelineLayout ssao_pipeline_layout = create_pipeline_layout(
+        vk_device,
+        { ssao_descriptor_set_layout }
+    );
+
+    VkPipelineDepthStencilStateCreateInfo no_depth_stencil = {};
+    no_depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    no_depth_stencil.depthTestEnable = VK_FALSE;
+    no_depth_stencil.depthWriteEnable = VK_FALSE;
+    no_depth_stencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+    no_depth_stencil.depthBoundsTestEnable = VK_FALSE;
+    no_depth_stencil.minDepthBounds = 0.0f;
+    no_depth_stencil.maxDepthBounds = 1.0f;
+    no_depth_stencil.stencilTestEnable = VK_FALSE;
+    no_depth_stencil.front = {};
+    no_depth_stencil.back = {};
+
+    VkPipeline ssao_pipeline = create_graphics_pipeline(
+        vk_device,
+        ssao_pipeline_layout,
+        render_pass,
+        { quad_binding_description },
+        { quad_position_attribute },
+        ssao_vert_shader_module,
+        ssao_frag_shader_module,
+        std::nullopt,
+        no_depth_stencil
+    );
+
+    vkDestroyShaderModule(vk_device, ssao_vert_shader_module, nullptr);
+    vkDestroyShaderModule(vk_device, ssao_frag_shader_module, nullptr);
+
+    // ------------------------------------------------------------
     // Shading graphics pipeline
     // ------------------------------------------------------------
 
@@ -380,6 +541,8 @@ int main() {
         glm::vec3 light_color;
         float env_multiplier;
         glm::vec3 light_view_dir;
+        float _pad;
+        glm::vec2 viewport_size;
     };
 
     VkBuffer global_ubo_buffer = create_buffer(
@@ -412,11 +575,11 @@ int main() {
             std::nullopt, std::nullopt,
             std::make_optional(reflection_map.m_image_view), std::make_optional(sampler)
         },
-        /* { */
-        /*     4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, */
-        /*     std::nullopt, std::nullopt, */
-        /*     std::make_optional(shadowmap_depth_textures[0].m_image_view), std::make_optional(shadow_sampler) */
-        /* } */
+        {
+            5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
+            std::nullopt, std::nullopt,
+            std::make_optional(ssao_color_texture.m_image_view), std::make_optional(sampler)
+        }
     };
 
     VkDescriptorPool global_descriptor_pool;
@@ -430,9 +593,6 @@ int main() {
     );
 
     update_descriptors(vk_device, global_descriptor_set, global_descriptors);
-
-    // Specify vertex data description
-    auto model_attributes = create_model_attributes();
 
     // Shader
     std::vector<char> material_vert_shader_src = read_file("vulkanproject/vert.spv");
@@ -523,18 +683,6 @@ int main() {
         { bg_descriptor_set_layout }
     );
 
-    VkPipelineDepthStencilStateCreateInfo no_depth_stencil = {};
-    no_depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    no_depth_stencil.depthTestEnable = VK_FALSE;
-    no_depth_stencil.depthWriteEnable = VK_FALSE;
-    no_depth_stencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
-    no_depth_stencil.depthBoundsTestEnable = VK_FALSE;
-    no_depth_stencil.minDepthBounds = 0.0f;
-    no_depth_stencil.maxDepthBounds = 1.0f;
-    no_depth_stencil.stencilTestEnable = VK_FALSE;
-    no_depth_stencil.front = {};
-    no_depth_stencil.back = {};
-
     VkPipeline bg_pipeline = create_graphics_pipeline(
         vk_device,
         bg_pipeline_layout,
@@ -549,196 +697,6 @@ int main() {
 
     vkDestroyShaderModule(vk_device, bg_vert_shader_module, nullptr);
     vkDestroyShaderModule(vk_device, bg_frag_shader_module, nullptr);
-
-    // ------------------------------------------------------------
-    // G-buffer pipeline
-    // ------------------------------------------------------------
-
-    // Create render pass
-    VkAttachmentDescription normal_attachment = color_attachment;
-    normal_attachment.format = VK_FORMAT_R16G16B16A16_SNORM;
-
-    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-
-    VkRenderPass gbuffer_render_pass = create_render_pass(
-        vk_device, 
-        normal_attachment, depth_attachment
-    );
-
-    // G-buffer framebuffers
-    VkFramebuffer gbuffer_framebuffer;
-    Texture gbuffer_normals_texture;
-    Texture gbuffer_depth_texture;
-    create_framebuffer_complete(
-        vk_device, physical_device,
-        command_pool, graphics_queue,
-        gbuffer_render_pass, surface_info.capabilities.currentExtent, VK_IMAGE_USAGE_SAMPLED_BIT,
-        &gbuffer_framebuffer, &gbuffer_normals_texture, &gbuffer_depth_texture,
-        normal_attachment.format
-    );
-
-    std::vector<char> gbuffer_vert_shader_src = read_file("vulkanproject/gbuffer_vert.spv");
-    std::vector<char> gbuffer_frag_shader_src = read_file("vulkanproject/gbuffer_frag.spv");
-    VkShaderModule gbuffer_vert_shader_module = create_shader_module(
-        vk_device, gbuffer_vert_shader_src
-    );
-    VkShaderModule gbuffer_frag_shader_module = create_shader_module(
-        vk_device, gbuffer_frag_shader_src
-    );
-
-    // Pipeline
-    VkPipelineLayout gbuffer_pipeline_layout = create_pipeline_layout(
-        vk_device,
-        { material_descriptor_set_layout }
-    );
-
-    VkPipeline gbuffer_pipeline = create_graphics_pipeline(
-        vk_device,
-        gbuffer_pipeline_layout,
-        gbuffer_render_pass,
-        { model_attributes.first },
-        model_attributes.second,
-        gbuffer_vert_shader_module,
-        gbuffer_frag_shader_module
-    );
-
-    vkDestroyShaderModule(vk_device, gbuffer_vert_shader_module, nullptr);
-    vkDestroyShaderModule(vk_device, gbuffer_frag_shader_module, nullptr);
-
-    // ------------------------------------------------------------
-    // SSAO pipeline
-    // ------------------------------------------------------------
-
-    // Shader
-    std::vector<char> ssao_vert_shader_src = read_file("vulkanproject/ssao_vert.spv");
-    std::vector<char> ssao_frag_shader_src = read_file("vulkanproject/ssao_frag.spv");
-    VkShaderModule ssao_vert_shader_module = create_shader_module(
-        vk_device, ssao_vert_shader_src
-    );
-    VkShaderModule ssao_frag_shader_module = create_shader_module(
-        vk_device, ssao_frag_shader_src
-    );
-
-    // Descriptors
-    struct SSAOUniformBlock {
-        glm::mat4 inv_pv;
-        glm::mat4 projection_matrix;
-        glm::mat4 inv_projection_matrix;
-        std::array<glm::vec4, 128> samples;
-    };
-
-    VkBuffer ssao_ubo_buffer = create_buffer(
-        vk_device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, sizeof(SSAOUniformBlock)
-    );
-    VkDeviceMemory ssao_ubo_memory = allocate_buffer_memory(
-        vk_device, physical_device,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        ssao_ubo_buffer
-    );
-    std::vector<DescriptorInfo> ssao_descriptors = {
-        {
-            0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT,
-            std::make_optional(ssao_ubo_buffer), std::make_optional(sizeof(SSAOUniformBlock)),
-            std::nullopt, std::nullopt
-        },
-        {
-            1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
-            std::nullopt, std::nullopt,
-            std::make_optional(gbuffer_normals_texture.m_image_view), std::make_optional(sampler)
-        },
-        {
-            2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
-            std::nullopt, std::nullopt,
-            std::make_optional(gbuffer_depth_texture.m_image_view), std::make_optional(sampler)
-        }
-    };
-
-    VkDescriptorPool ssao_descriptor_pool;
-    VkDescriptorSetLayout ssao_descriptor_set_layout;
-    VkDescriptorSet ssao_descriptor_set;
-    create_descriptors(
-        vk_device,
-        &ssao_descriptor_pool,
-        &ssao_descriptor_set_layout, &ssao_descriptor_set,
-        ssao_descriptors
-    );
-
-    update_descriptors(vk_device, ssao_descriptor_set, ssao_descriptors);
-
-    // Pipeline
-    VkPipelineLayout ssao_pipeline_layout = create_pipeline_layout(
-        vk_device,
-        { ssao_descriptor_set_layout }
-    );
-
-    VkPipeline ssao_pipeline = create_graphics_pipeline(
-        vk_device,
-        ssao_pipeline_layout,
-        render_pass,
-        { quad_binding_description },
-        { quad_position_attribute },
-        ssao_vert_shader_module,
-        ssao_frag_shader_module,
-        std::nullopt,
-        no_depth_stencil
-    );
-
-    vkDestroyShaderModule(vk_device, ssao_vert_shader_module, nullptr);
-    vkDestroyShaderModule(vk_device, ssao_frag_shader_module, nullptr);
-
-    // ------------------------------------------------------------
-    // Shadowmap render pipeline
-    // ------------------------------------------------------------
-    /* // Shadow map framebuffers */
-    /* std::array<VkFramebuffer, MAX_FRAMES_IN_FLIGHT> shadowmap_framebuffers; */
-    /* std::array<Texture, MAX_FRAMES_IN_FLIGHT> shadowmap_color_textures; */
-    /* std::array<Texture, MAX_FRAMES_IN_FLIGHT> shadowmap_depth_textures; */
-    /* for(size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) { */
-    /*     create_framebuffer_complete( */
-    /*         vk_device, physical_device, */
-    /*         command_pool, graphics_queue, */
-    /*         render_pass, {1024, 1024}, VK_IMAGE_USAGE_SAMPLED_BIT, */
-    /*         &shadowmap_framebuffers[i], &shadowmap_color_textures[i], &shadowmap_depth_textures[i] */
-    /*     ); */
-    /* } */
-
-    /* // Shader */
-    /* std::vector<char> shadowmap_vert_shader_src = read_file("vulkanproject/shadowmap_vert.spv"); */
-    /* std::vector<char> shadowmap_frag_shader_src = read_file("vulkanproject/shadowmap_frag.spv"); */
-    /* VkShaderModule shadowmap_vert_shader_module = create_shader_module( */
-    /*     vk_device, shadowmap_vert_shader_src */
-    /* ); */
-    /* VkShaderModule shadowmap_frag_shader_module = create_shader_module( */
-    /*     vk_device, shadowmap_frag_shader_src */
-    /* ); */
-
-    /* // Pipeline */
-    /* VkPipelineLayout shadowmap_pipeline_layout = create_pipeline_layout( */
-    /*     vk_device, */
-    /*     { material_descriptor_set_layout } */
-    /* ); */
-
-    /* VkPipelineRasterizationStateCreateInfo shadowmap_rasterizer = {}; */
-    /* shadowmap_rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO; */
-    /* shadowmap_rasterizer.depthClampEnable = VK_FALSE; */
-    /* shadowmap_rasterizer.rasterizerDiscardEnable = VK_FALSE; */
-    /* shadowmap_rasterizer.polygonMode = VK_POLYGON_MODE_FILL; */
-    /* shadowmap_rasterizer.lineWidth = 1.0f; */
-    /* shadowmap_rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; */
-    /* shadowmap_rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; */
-    /* shadowmap_rasterizer.depthBiasEnable = VK_TRUE; */
-    /* shadowmap_rasterizer.depthBiasSlopeFactor = 2.5; */
-
-    /* VkPipeline shadowmap_pipeline = create_graphics_pipeline( */
-    /*     vk_device, */
-    /*     shadowmap_pipeline_layout, */
-    /*     render_pass, */
-    /*     { model_attributes.first }, */
-    /*     model_attributes.second, */
-    /*     shadowmap_vert_shader_module, */
-    /*     shadowmap_frag_shader_module, */
-    /*     shadowmap_rasterizer */
-    /* ); */
 
     //
 
@@ -756,7 +714,6 @@ int main() {
 
     auto start_time = std::chrono::high_resolution_clock::now();
     float previous_frame_time = 0.0f;
-    bool regenerate_shadowmap_pipeline = false;
 
     BgUniformBlock bg_ubo = {};
     bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
@@ -774,14 +731,20 @@ int main() {
     global_ubo.light_view_dir = glm::normalize(
         glm::vec3(view_matrix * glm::vec4(-light_object.position, 0.0))
     );
+    global_ubo.viewport_size = glm::vec2(
+        surface_info.capabilities.currentExtent.width,
+        surface_info.capabilities.currentExtent.height
+    );
 
     SSAOUniformBlock ssao_ubo = {};
     ssao_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
     ssao_ubo.projection_matrix = projection_matrix;
     ssao_ubo.inv_projection_matrix = glm::inverse(projection_matrix);
     for(size_t i = 0; i < ssao_ubo.samples.size(); ++i) {
-        ssao_ubo.samples[i] = glm::vec4(cosine_sample_hemisphere(), 0.0);
+        ssao_ubo.samples[i] = glm::vec4(cosine_sample_hemisphere() * randf(), 0.0);
     }
+    ssao_ubo.hemisphere_radius = 0.8;
+    ssao_ubo.nof_samples = ssao_ubo.samples.size();
 
     // ------------------------------------------------------------
     // Render passes
@@ -789,85 +752,6 @@ int main() {
 
     // Record command buffer for frame rendering
     glm::vec4 clear_color(0.0, 0.0, 0.0, 1.0);
-    /* auto render_shadowmap = [&]( */
-    /*     VkCommandBuffer command_buffer, */
-    /*     uint32_t image_index, uint32_t current_frame, */
-    /*     glm::mat4 light_view_matrix, glm::mat4 light_projection_matrix */
-    /* ) { */
-    /*     update_frame_data( */
-    /*         vk_device, */
-    /*         &frame_data[current_frame], */
-    /*         sampler, objects, models, */
-    /*         light_view_matrix, light_projection_matrix */
-    /*     ); */
-    /*     VkCommandBufferBeginInfo begin_info = {}; */
-    /*     begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO; */
-    /*     VK_HANDLE_ERROR( */
-    /*         vkBeginCommandBuffer(command_buffer, &begin_info), */
-    /*         "Could not begin command buffer" */
-    /*     ); */
-
-    /*     std::array<VkClearValue, 2> clear_values = {}; */
-    /*     clear_values[0].color = { clear_color.r, clear_color.g, clear_color.b, clear_color.a }; */
-    /*     clear_values[1].depthStencil = { 1.0f, 0 }; */
-    /*     VkExtent2D render_extent = { */
-    /*         static_cast<uint32_t>(shadowmap_color_textures[current_frame].m_width), */
-    /*         static_cast<uint32_t>(shadowmap_color_textures[current_frame].m_height) */
-    /*     }; */ 
-    /*     VkViewport viewport = {}; */
-    /*     viewport.x = 0.0f; */
-    /*     viewport.y = 0.0f; */
-    /*     viewport.width = render_extent.width; */
-    /*     viewport.height = render_extent.height; */
-    /*     viewport.minDepth = 0.0f; */
-    /*     viewport.maxDepth = 1.0f; */
-    /*     VkRect2D scissor = {}; */
-    /*     scissor.offset = { 0, 0 }; */
-    /*     scissor.extent = render_extent; */
-    /*     VkDeviceSize offsets[] = { 0 }; */
-
-    /*     // Security camera render pass */
-    /*     VkRenderPassBeginInfo render_pass_begin_info = {}; */
-    /*     render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO; */
-    /*     render_pass_begin_info.renderPass = render_pass; */
-    /*     render_pass_begin_info.framebuffer = shadowmap_framebuffers[current_frame]; */
-    /*     render_pass_begin_info.renderArea.offset = {0, 0}; */
-    /*     render_pass_begin_info.renderArea.extent = render_extent; */
-    /*     render_pass_begin_info.clearValueCount = clear_values.size(); */
-    /*     render_pass_begin_info.pClearValues = clear_values.data(); */
-    /*     vkCmdBeginRenderPass(command_buffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE); */
-    /*     vkCmdSetViewport(command_buffer, 0, 1, &viewport); */
-    /*     vkCmdSetScissor(command_buffer, 0, 1, &scissor); */
-
-    /*     // Render scene */
-    /*     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowmap_pipeline); */
-
-    /*     size_t descriptor_index = 0; */
-    /*     for(const Object* object : objects) { */
-    /*         const Model& model = *models[object->m_model_index]; */
-    /*         vkCmdBindVertexBuffers(command_buffer, 0, 1, &model.m_vertex_buffer, offsets); */
-
-    /*         for(const Mesh& mesh : model.m_meshes) { */
-    /*             vkCmdBindDescriptorSets( */
-    /*                 command_buffer, */
-    /*                 VK_PIPELINE_BIND_POINT_GRAPHICS, */
-    /*                 material_pipeline_layout, */
-    /*                 0, 1, */
-    /*                 &frame_data[current_frame].m_descriptor_sets[descriptor_index], */
-    /*                 0, nullptr */
-    /*             ); */
-    /*             vkCmdDraw(command_buffer, mesh.m_num_vertices, 1, mesh.m_start_index, 0); */
-                
-    /*             descriptor_index++; */
-    /*         } */
-    /*     } */
-
-    /*     vkCmdEndRenderPass(command_buffer); */
-    /*     VK_HANDLE_ERROR( */
-    /*         vkEndCommandBuffer(command_buffer), */
-    /*         "Could not end command buffer" */
-    /*     ); */
-    /* }; */
     auto render_gbuffer = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
         begin_render_pass(
             command_buffer, gbuffer_render_pass, gbuffer_framebuffer,
@@ -908,7 +792,7 @@ int main() {
 
     auto render_ssao = [&](VkCommandBuffer command_buffer, uint32_t image_index, uint32_t current_frame) {
         begin_render_pass(
-            command_buffer, render_pass, framebuffers[image_index],
+            command_buffer, render_pass, ssao_framebuffer,
             surface_info.capabilities.currentExtent
         );
 
@@ -988,11 +872,8 @@ int main() {
         // Render GUI
         imgui_new_frame();
 
-        /* float depth_bias_offset = shadowmap_rasterizer.depthBiasSlopeFactor; */
-        /* ImGui::SliderFloat("Depth bias offset", &shadowmap_rasterizer.depthBiasSlopeFactor, 0.0, 10.0); */
-        /* if(shadowmap_rasterizer.depthBiasSlopeFactor != depth_bias_offset) { */
-        /*     regenerate_shadowmap_pipeline = true; */
-        /* } */
+        ImGui::SliderInt("SSAO samples", &ssao_ubo.nof_samples, 0, ssao_ubo.samples.size());
+        ImGui::SliderFloat("SSAO hemisphere radius", &ssao_ubo.hemisphere_radius, 0.1, 10.0);
 
         imgui_render(command_buffer);
 
@@ -1082,6 +963,10 @@ int main() {
         global_ubo.light_view_dir = glm::normalize(
             glm::vec3(view_matrix * glm::vec4(-light_object.position, 0.0))
         );
+        global_ubo.viewport_size = glm::vec2(
+            surface_info.capabilities.currentExtent.width,
+            surface_info.capabilities.currentExtent.height
+        );
         write_memory_mapped(vk_device, global_ubo_memory, global_ubo);
 
         bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
@@ -1092,21 +977,6 @@ int main() {
         ssao_ubo.projection_matrix = projection_matrix;
         ssao_ubo.inv_projection_matrix = glm::inverse(projection_matrix);
         write_memory_mapped(vk_device, ssao_ubo_memory, ssao_ubo);
-
-        if(regenerate_shadowmap_pipeline) {
-            vkDeviceWaitIdle(vk_device);
-            /* vkDestroyPipeline(vk_device, shadowmap_pipeline, nullptr); */
-            /* shadowmap_pipeline = create_graphics_pipeline( */
-            /*     vk_device, */
-            /*     shadowmap_pipeline_layout, */
-            /*     render_pass, */
-            /*     { model_attributes.first }, */
-            /*     model_attributes.second, */
-            /*     shadowmap_vert_shader_module, */
-            /*     shadowmap_frag_shader_module, */
-            /*     shadowmap_rasterizer */
-            /* ); */
-        }
 
         // ------------------------------------------------------------
         // Render frame
@@ -1176,9 +1046,36 @@ int main() {
             1
         );
 
+        transition_image_layout(
+            vk_device,
+            command_pool, graphics_queue,
+            ssao_color_texture.m_image,
+            VK_FORMAT_B8G8R8A8_SRGB,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            1
+        );
+
         vkResetCommandBuffer(command_buffers[current_frame], 0);
-        /* render_frame(command_buffers[current_frame], image_index, current_frame); */
         render_ssao(command_buffers[current_frame], image_index, current_frame);
+
+        VK_HANDLE_ERROR(
+            vkQueueSubmit(graphics_queue, 1, &submit_info, nullptr),
+            "Could not submit queue"
+        );
+        vkDeviceWaitIdle(vk_device); // Too lazy to implement proper synchronization
+        transition_image_layout(
+            vk_device,
+            command_pool, graphics_queue,
+            ssao_color_texture.m_image,
+            VK_FORMAT_B8G8R8A8_SRGB,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            1
+        );
+
+        vkResetCommandBuffer(command_buffers[current_frame], 0);
+        render_frame(command_buffers[current_frame], image_index, current_frame);
 
         VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         submit_info.pWaitDstStageMask = wait_stages;
@@ -1248,14 +1145,21 @@ int main() {
     // Clean up
     // ------------------------------------------------------------
 
-    /* vkDestroyShaderModule(vk_device, shadowmap_vert_shader_module, nullptr); */
-    /* vkDestroyShaderModule(vk_device, shadowmap_frag_shader_module, nullptr); */
-    for(auto& m : landingpad_model.m_materials) {
-        if(m.m_name == "TV_Screen") m.m_emission_texture = {};
-    }
-    /* for(auto fb : shadowmap_framebuffers) vkDestroyFramebuffer(vk_device, fb, nullptr); */
-    /* for(auto t : shadowmap_color_textures) t.destroy(vk_device); */
-    /* for(auto t : shadowmap_depth_textures) t.destroy(vk_device); */
+    vkDestroyRenderPass(vk_device, gbuffer_render_pass, nullptr);
+    vkDestroyDescriptorPool(vk_device, ssao_descriptor_pool, nullptr);
+    vkDestroyDescriptorSetLayout(vk_device, ssao_descriptor_set_layout, nullptr);
+    vkDestroyPipeline(vk_device, ssao_pipeline, nullptr);
+    vkDestroyPipelineLayout(vk_device, ssao_pipeline_layout, nullptr);
+    vkDestroyPipeline(vk_device, gbuffer_pipeline, nullptr);
+    vkDestroyPipelineLayout(vk_device, gbuffer_pipeline_layout, nullptr);
+    vkDestroyFramebuffer(vk_device, ssao_framebuffer, nullptr);
+    ssao_color_texture.destroy(vk_device);
+    ssao_depth_texture.destroy(vk_device);
+    vkDestroyFramebuffer(vk_device, gbuffer_framebuffer, nullptr);
+    gbuffer_normals_texture.destroy(vk_device);
+    gbuffer_depth_texture.destroy(vk_device);
+    vkDestroyBuffer(vk_device, ssao_ubo_buffer, nullptr);
+    vkFreeMemory(vk_device, ssao_ubo_memory, nullptr);
     vkDestroyDescriptorSetLayout(vk_device, global_descriptor_set_layout, nullptr);
     vkDestroyDescriptorPool(vk_device, global_descriptor_pool, nullptr);
     vkDestroyBuffer(vk_device, global_ubo_buffer, nullptr);
@@ -1276,7 +1180,6 @@ int main() {
     for(auto& model : models) model->destroy(vk_device);
     vkDestroyDescriptorSetLayout(vk_device, material_descriptor_set_layout, nullptr);
     vkDestroySampler(vk_device, sampler, nullptr);
-    /* vkDestroySampler(vk_device, shadow_sampler, nullptr); */
     for(auto f : frame_in_flight) vkDestroyFence(vk_device, f, nullptr);
     for(auto s : render_finished) vkDestroySemaphore(vk_device, s, nullptr);
     for(auto s : image_avaiable) vkDestroySemaphore(vk_device, s, nullptr);
@@ -1284,8 +1187,6 @@ int main() {
     for(const auto framebuffer : framebuffers) {
         vkDestroyFramebuffer(vk_device, framebuffer, nullptr);
     }
-    /* vkDestroyPipeline(vk_device, shadowmap_pipeline, nullptr); */
-    /* vkDestroyPipelineLayout(vk_device, shadowmap_pipeline_layout, nullptr); */
     vkDestroyPipeline(vk_device, material_pipeline, nullptr);
     vkDestroyPipelineLayout(vk_device, material_pipeline_layout, nullptr);
     vkDestroyRenderPass(vk_device, render_pass, nullptr);
