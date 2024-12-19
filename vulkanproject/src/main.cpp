@@ -177,6 +177,15 @@ int main() {
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
     vkCreateSampler(vk_device, &sampler_create_info, nullptr, &sampler);
 
+    VkSampler ssao_sampler;
+    sampler_create_info.minFilter = VK_FILTER_NEAREST;
+    sampler_create_info.magFilter = VK_FILTER_NEAREST;
+    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    sampler_create_info.anisotropyEnable = VK_FALSE;
+    vkCreateSampler(vk_device, &sampler_create_info, nullptr, &ssao_sampler);
+
     // Load environment map
     Texture env_map = load_texture_from_image(
         vk_device, physical_device,
@@ -474,12 +483,12 @@ int main() {
         {
             1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
-            std::make_optional(gbuffer_normals_texture.m_image_view), std::make_optional(sampler)
+            std::make_optional(gbuffer_normals_texture.m_image_view), std::make_optional(ssao_sampler)
         },
         {
             2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
-            std::make_optional(gbuffer_depth_texture.m_image_view), std::make_optional(sampler)
+            std::make_optional(gbuffer_depth_texture.m_image_view), std::make_optional(ssao_sampler)
         }
     };
 
@@ -578,7 +587,7 @@ int main() {
         {
             5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT,
             std::nullopt, std::nullopt,
-            std::make_optional(ssao_color_texture.m_image_view), std::make_optional(sampler)
+            std::make_optional(ssao_color_texture.m_image_view), std::make_optional(ssao_sampler)
         }
     };
 
@@ -718,7 +727,7 @@ int main() {
     BgUniformBlock bg_ubo = {};
     bg_ubo.inv_pv = glm::inverse(projection_matrix * view_matrix);
     bg_ubo.camera_pos = camera_position;
-    bg_ubo.environment_multiplier = 0.5;
+    bg_ubo.environment_multiplier = 0.8;
     write_memory_mapped(vk_device, bg_ubo_memory, bg_ubo);
 
     GlobalUBO global_ubo = {};
@@ -726,8 +735,8 @@ int main() {
     global_ubo.view_inverse = glm::inverse(view_matrix);
     global_ubo.view_space_light_position = view_matrix * glm::vec4(light_object.position, 1.0);
     global_ubo.light_color = glm::vec3(1.0, 1.0, 1.0);
-    global_ubo.light_intensity = 800.0;
-    global_ubo.env_multiplier = 0.1;
+    global_ubo.light_intensity = 1000.0;
+    global_ubo.env_multiplier = 0.4;
     global_ubo.light_view_dir = glm::normalize(
         glm::vec3(view_matrix * glm::vec4(-light_object.position, 0.0))
     );
@@ -1145,6 +1154,7 @@ int main() {
     // Clean up
     // ------------------------------------------------------------
 
+    vkDestroySampler(vk_device, ssao_sampler, nullptr);
     vkDestroyRenderPass(vk_device, gbuffer_render_pass, nullptr);
     vkDestroyDescriptorPool(vk_device, ssao_descriptor_pool, nullptr);
     vkDestroyDescriptorSetLayout(vk_device, ssao_descriptor_set_layout, nullptr);

@@ -127,7 +127,5 @@ void main() {
     float visibility = 1.0;
     if(num_valid_samples > 0) visibility = float(num_visible_samples) / float(num_valid_samples);
 
-    // visibility = 1.0 - visibility / float(nof_samples);
-
     out_color = vec4(vec3(visibility), 1.0);
 }
